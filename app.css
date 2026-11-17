@@ -378,3 +378,9 @@ li.word.row .det{background:var(--paper);cursor:default}
   .totop{left:auto;right:28px;bottom:24px}
   .toast{bottom:28px}
 }
+
+/* accent switch in the top bar: 美 | 英, the current one filled */
+.acc{display:inline-flex;align-items:center;border:1px solid var(--rule);border-radius:999px;background:var(--paper);padding:2px;font:inherit;font-size:.78rem;cursor:pointer;color:var(--muted)}
+.acc span{min-width:26px;padding:3px 7px;border-radius:999px;text-align:center}
+.acc[data-a="us"] #acc-us,.acc[data-a="gb"] #acc-gb{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.chip.seen{background:var(--accent-soft);color:var(--accent)}

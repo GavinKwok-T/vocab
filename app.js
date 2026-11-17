@@ -102,7 +102,7 @@
   /* controls */
   function setPressed(ids,on){ ids.forEach(id=>$('#'+id).setAttribute('aria-pressed',id===on)); }
   [['m-all','all'],['m-zh','zh'],['m-en','en']].forEach(([id,m])=>$('#'+id).addEventListener('click',()=>{mode=m;shown.clear();setPressed(['m-all','m-zh','m-en'],id);render();}));
-  function syncVoiceBtns(){ setPressed(['v-gb','v-us'],accent==='en-GB'?'v-gb':'v-us'); $('#r-slow').setAttribute('aria-pressed',slow); }
+  function syncVoiceBtns(){ setPressed(['v-gb','v-us'],accent==='en-GB'?'v-gb':'v-us'); $('#acc-btn').dataset.a=accent==='en-GB'?'gb':'us'; $('#acc-btn').setAttribute('aria-label',accent==='en-GB'?'现在是英音，点一下换美音':'现在是美音，点一下换英音'); $('#r-slow').setAttribute('aria-pressed',slow); }
   function preload(){
     if(q.trim()) return;
     if(sec==='errors') return;   /* the error book spans many days: a day's pack loads on the first tap */
@@ -111,6 +111,7 @@
   }
   $('#v-gb').addEventListener('click',()=>{accent='en-GB';store.set('accent-v2',accent);syncVoiceBtns();preload();});
   $('#v-us').addEventListener('click',()=>{accent='en-US';store.set('accent-v2',accent);syncVoiceBtns();preload();});
+  $('#acc-btn').addEventListener('click',()=>{accent=accent==='en-GB'?'en-US':'en-GB';store.set('accent-v2',accent);syncVoiceBtns();preload();toast(accent==='en-GB'?'已换成英音':'已换成美音');});
   $('#r-slow').addEventListener('click',()=>{slow=!slow;store.set('slow',slow?'1':'0');syncVoiceBtns();});
   syncVoiceBtns();
   $('#d-toggle').addEventListener('click',()=>{ detAll=!detAll; detTog.clear(); store.set('det-all',detAll?'1':'0'); render(); });
@@ -232,6 +233,9 @@
      chip opens them for this card, 展开详情 in the tool row opens them on every card.
      star: {doc, gi, wi} for 课堂 cards, which get the 想用 toggle */
   const detOpen=key=>detAll!==detTog.has(key);
+  /* a teacher's word met before: the class card is a copy, with seen:["day-09","c-2026-11-09"] naming where it was learned */
+  const seenName=id=>{ const s=String(id); if(s.startsWith('c-')) return shortDate(s.slice(2)); const d=days.find(x=>x.id===s); return d?'Day '+d.day:s; };
+  const seenHtml=w=>Array.isArray(w.seen)&&w.seen.length?`<span class="chip seen">${esc(w.seen.map(seenName).join('、'))} 学过</span>`:'';
   function wordLi(w,n,extra,dayId,star){
     const dd=dayId?` data-day="${esc(dayId)}"`:'';
     const key=(dayId||'')+'|'+w.w, coverEn=isCovered(key,'en'), coverZh=isCovered(key,'zh');
@@ -241,7 +245,7 @@
     const chips=[w.tip?I.bulb+'记法':'',fam.length?'词族 '+fam.length:'',col.length?'搭配 '+col.length:''].filter(Boolean), open=detOpen(key);
     return `<li class="word" data-ci="${cards.length-1}">
       <div class="main">
-        <div class="wline"><span class="en${cover(coverEn,'en','点开看英文')}"><span>${esc(w.w)}</span></span>${posHtml(w)}${w.trap?'<span class="chip">易拼错</span>':''}${w.star&&!star?'<span class="chip want">想用</span>':''}${missSet&&missSet.has(w.w.toLowerCase())?'<span class="chip bad">错过</span>':''}</div>
+        <div class="wline"><span class="en${cover(coverEn,'en','点开看英文')}"><span>${esc(w.w)}</span></span>${posHtml(w)}${w.trap?'<span class="chip">易拼错</span>':''}${w.star&&!star?'<span class="chip want">想用</span>':''}${missSet&&missSet.has(w.w.toLowerCase())?'<span class="chip bad">错过</span>':''}${seenHtml(w)}</div>
         ${ipaHtml(w,coverEn)}
         <span class="zh${cover(coverZh,'zh','点开看中文')}"><span>${esc(w.zh)}</span></span>
         ${extra||''}
@@ -460,7 +464,7 @@
      A right answer moves on by itself after a moment; a wrong one waits until the right spelling has been typed once
      (copying it is the drill). There is no "count it as right": a slip is a miss, as in the exam.
      Each finished question updates review/progress (a short pause batches them) and the session's practice/<id> log. */
-  const ADV_MS=700;   /* how long a right answer stays green before the next question */
+  const ADV_MS=2200;   /* how long a right answer stays green before the next question (11/17: 0.7 s was too fast) */
   const MODE_L={zh:'看中文写英文',audio:'听发音写英文'};
   const CN_NUM=['','一','两','三','四','五','六','七','八'];
   const norm=s=>String(s||'').normalize('NFKC').replace(/[’‘`´]/g,"'").replace(/\s+/g,' ').trim().toLowerCase().replace(/[.。]+$/,'');
