@@ -1,4 +1,3 @@
-/* Layout: a pocket word notebook — one narrow column, day tabs on top, each word a ruled line with its own speak button */
 :root{
   --bg:#f3f5f4; --paper:#ffffff; --ink:#18221f; --muted:#5d6b66; --rule:#dfe5e2;
   --accent:#1f6f5c; --accent-ink:#ffffff; --accent-soft:#e2f0eb;
@@ -22,14 +21,6 @@ img{max-width:100%}
 [hidden]{display:none!important}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
-.wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:16px}
-header h1{font-family:var(--f-word);font-size:1.6rem;margin:0;text-wrap:balance;letter-spacing:.01em}
-header p{margin:.2rem 0 0;color:var(--muted);font-size:.9rem}
-.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.tabs{display:flex;flex-wrap:wrap;gap:6px}
-.tab{flex:none;border:1px solid var(--rule);background:var(--paper);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:.9rem;cursor:pointer}
-.tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
-.tab.err[aria-selected="true"]{background:var(--bad);border-color:var(--bad)}
 .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5;background:var(--bg);margin-block:-8px;padding-block:8px;border-bottom:1px solid transparent}
 .tools.stuck{border-bottom-color:var(--rule);box-shadow:0 6px 12px -10px rgba(0,0,0,.35)}
 .stick-mark{height:0;margin-bottom:-16px}
@@ -43,9 +34,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .group{background:var(--paper);border:1px solid var(--rule);border-radius:14px;overflow:hidden}
 .group h3{margin:0;padding:10px 16px;font-size:.8rem;letter-spacing:.08em;color:var(--muted);border-bottom:1px solid var(--rule)}
 ol{list-style:none;margin:0;padding:0}
-li.word{display:grid;grid-template-columns:2.2rem 1fr auto;gap:2px 10px;padding:12px 12px 12px 16px;border-bottom:1px solid var(--rule);align-items:start}
-li.word:last-child{border-bottom:0}
-.num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem;padding-top:.35rem}
 .main{min-width:0;display:grid;gap:2px}
 .en{font-family:var(--f-word);font-size:1.25rem;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
 .wline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
@@ -80,10 +68,6 @@ li.word:last-child{border-bottom:0}
 .empty strong{display:block;color:var(--ink);font-size:1.05rem;margin-bottom:4px}
 .note{font-size:.8rem;color:var(--muted)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:.85rem}
-/* 课堂 tab: a quick-capture inbox (typed between classes) above the notes Claude organizes each evening */
-#view{display:grid;gap:12px}
-.capwrap{display:grid;gap:10px}
-.capwrap[hidden]{display:none}
 .cap{background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:12px;display:grid;gap:8px}
 .cap input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--rule);border-radius:10px;background:var(--bg);color:var(--ink)}
 .cap input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -118,7 +102,6 @@ li.word:last-child{border-bottom:0}
 .totop{position:fixed;z-index:15;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:44px;height:44px;border-radius:50%;border:1px solid var(--rule);background:var(--paper);color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.18);display:grid;place-items:center;padding:0;cursor:pointer}
 .totop svg{width:20px;height:20px}
 .totop[hidden]{display:none}
-@media (min-width:860px){.totop{left:auto;right:max(16px,calc(50vw - 420px))}}
 /* finding things: a search field over everything, three section tabs, and a ‹ title › pager whose title opens a month-grouped index */
 .search{position:relative}
 .search input{width:100%;font:inherit;font-size:16px;padding:10px 42px 10px 40px;border:1px solid var(--rule);border-radius:12px;background:var(--paper);color:var(--ink);-webkit-appearance:none;appearance:none}
@@ -143,8 +126,6 @@ li.word:last-child{border-bottom:0}
 .idx-m{color:var(--muted);font-size:.82rem;font-variant-numeric:tabular-nums;white-space:nowrap}
 .idx-m.low{color:var(--bad)}
 .filters{display:flex;flex-wrap:wrap;gap:6px}
-.err-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.err-tools .sort{margin-left:auto}
 /* part of speech next to the word: the same n. / v. / adj. the teachers write on the board, with the Chinese name */
 .pos{flex:none;font-size:.72rem;line-height:1.6;color:var(--muted);border:1px solid var(--rule);border-radius:6px;padding:0 6px;white-space:nowrap}
 .src{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
@@ -206,7 +187,6 @@ li.word:last-child{border-bottom:0}
 .recent li{display:flex;justify-content:space-between;gap:10px;padding:9px 16px;border-bottom:1px solid var(--rule);font-size:.88rem}
 .recent li:last-child{border-bottom:0}
 .recent .r-s{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
-.quiz-card{border-color:var(--accent)}
 .quiz-next{margin:0;font-size:.9rem;color:var(--ink)}
 .miss li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--rule);align-items:center}
 .miss li:last-child{border-bottom:0}
@@ -230,7 +210,6 @@ li.word:last-child{border-bottom:0}
 body.has-bar .totop{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 @media (prefers-reduced-motion:no-preference){.speak,.starbtn{transition:background .15s,color .15s}.bar-prog i{transition:width .25s}}
 /* connection: the sync badge in the header, the gate shown before the data is here, the settings / help dialog */
-header .hrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .sync{flex:none;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--paper);color:var(--muted);border-radius:999px;padding:5px 11px;font:inherit;font-size:.8rem;cursor:pointer}
 .sync .dot{width:8px;height:8px;border-radius:50%;background:var(--rule)}
 .sync[data-k="ok"] .dot{background:var(--accent)}
@@ -255,3 +234,147 @@ header .hrow{display:flex;align-items:center;justify-content:space-between;gap:1
 .bad-t{color:var(--bad)}
 .steps{list-style:decimal;margin:0;padding-left:1.3em;display:grid;gap:6px;font-size:.9rem}
 
+/* ── layout: one column with a bottom tab bar on a phone; a side bar, an index beside the cards and two columns of
+   cards on a wide screen. Practice and the quiz take the whole screen (body.in-practice) ── */
+.app{display:grid;grid-template-columns:minmax(0,1fr);min-height:100vh}
+.side{display:none}
+.main-col{min-width:0;width:100%;max-width:760px;margin:0 auto;display:grid;gap:12px;align-content:start;padding-block:12px calc(88px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body.in-practice .main-col{padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
+#view{display:grid;gap:12px;min-width:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px}
+.top h1{margin:0;font-size:1.35rem;font-weight:700;letter-spacing:.01em;text-wrap:balance}
+.top-acts{display:flex;align-items:center;gap:4px}
+.ib{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--muted);padding:0;cursor:pointer}
+.ib:hover{background:var(--accent-soft);color:var(--ink)}
+.ib svg{width:20px;height:20px}
+.ib.sm{width:30px;height:30px;border-radius:8px}
+.ib.sm svg{width:17px;height:17px}
+.search[hidden]{display:none}
+.tools[hidden]{display:none}
+.tools{justify-content:flex-start}
+
+.tabbar{position:fixed;z-index:12;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);background:var(--paper);border-top:1px solid var(--rule);padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+.navb{position:relative;display:grid;justify-items:center;gap:2px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:.72rem;padding:4px 2px;cursor:pointer}
+.navb svg{width:22px;height:22px}
+.navb[aria-selected="true"]{color:var(--accent);font-weight:700}
+.nb{position:absolute;top:0;left:calc(50% + 5px);min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--bad);color:var(--paper);font-size:.65rem;font-weight:700;line-height:16px;text-align:center}
+.nb.dot{min-width:8px;width:8px;height:8px;padding:0;top:2px;left:calc(50% + 8px)}
+body.in-practice .tabbar,body.in-practice .side{display:none}
+body.in-practice #q-open{display:none}   /* no looking words up in the middle of a question */
+.totop{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+body.in-practice:not(.has-bar) .totop{bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.toast{z-index:30;bottom:calc(84px + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 32px)}
+
+/* buttons that carry a small icon */
+.pill{display:inline-flex;align-items:center;gap:4px}
+.pill svg{width:14px;height:14px;flex:none}
+.pill.warn[aria-pressed="true"]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.go svg{width:16px;height:16px;flex:none}
+.go.sm{margin-left:0;padding:7px 14px;display:inline-flex;align-items:center;gap:4px;font-size:.9rem}
+.go.wide{margin-left:0;width:100%;padding:12px}
+.pacts{display:inline-flex}
+
+/* word cards: each card its own box; the group name is a small heading above them */
+.wg{display:grid;gap:8px;min-width:0}
+.wg h3{margin:4px 2px 0;font-size:.8rem;letter-spacing:.06em;color:var(--muted);display:flex;align-items:center;gap:2px;min-height:30px}
+.cards,.rows{display:grid;grid-template-columns:minmax(0,1fr)}
+.cards{gap:8px}
+li.word{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:start;padding:12px 12px 12px 14px;background:var(--paper);border:1px solid var(--rule);border-radius:14px}
+.ex,.exp{font-style:normal}
+.exzh{margin-left:34px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chipb{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--rule);background:transparent;color:var(--muted);border-radius:999px;padding:2px 9px;font:inherit;font-size:.75rem;line-height:1.6;cursor:pointer}
+.chipb svg{width:13px;height:13px}
+.chipb[aria-expanded="true"]{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.det{display:grid;gap:4px;margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--bg);min-width:0}
+
+/* 单词 / 课堂: the pager's 目录 swaps the cards for the index on a phone */
+.two{display:flex;flex-direction:column;gap:12px;min-width:0}
+.pane{order:1;display:grid;gap:12px;min-width:0}
+.side-idx{order:2;display:none;min-width:0}
+.idx-row{grid-template-columns:auto minmax(0,1fr) auto}
+.idx-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:899px){
+  .two.idx-open .side-idx{display:block}
+  .two.idx-open .pane>:not(.pager){display:none}
+}
+details.inbox>summary{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 10px;padding:10px 16px;font-size:.9rem;font-weight:700}
+details.inbox>summary::-webkit-details-marker{display:none}
+details.inbox[open]>summary{border-bottom:1px solid var(--rule)}
+details.inbox .note{font-weight:400}
+
+/* 错词本: one line per word */
+li.word.row{align-items:center;padding:9px 10px 9px 14px;border:0;border-bottom:1px solid var(--rule);border-radius:0;background:transparent;cursor:pointer}
+li.word.row:last-child{border-bottom:0}
+li.word.row .en{font-size:1.08rem;line-height:1.35}
+li.word.row .zh{font-size:.85rem;color:var(--muted)}
+li.word.row.open{align-items:start;background:var(--bg)}
+li.word.row .det{background:var(--paper);cursor:default}
+.racts{display:flex;align-items:center;gap:8px}
+
+/* 今天 */
+.today{display:flex;flex-direction:column;gap:12px;min-width:0}
+.t-main{order:3;display:grid;gap:12px;min-width:0}
+.t-side{display:contents}
+.stats{order:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{background:var(--paper);border:1px solid var(--rule);border-radius:12px;padding:8px 12px;font-size:.8rem;color:var(--muted)}
+.stat span{display:block}
+.stat b{font-size:1.3rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.chart{order:2;padding:10px 14px;display:grid;gap:6px}
+.chart-h{display:flex;justify-content:space-between;gap:10px;font-size:.8rem;color:var(--muted)}
+.chart-h b{color:var(--accent);font-variant-numeric:tabular-nums}
+.bars{display:flex;align-items:flex-end;gap:6px;height:48px}
+.bars i{flex:1;min-height:4px;border-radius:4px;background:var(--accent-soft)}
+.bars i.cur{background:var(--accent)}
+.bars i.low{background:var(--bad-soft)}
+.bars i.low.cur{background:var(--bad)}
+.chart-x{display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.recent{order:4}
+.todos li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 12px 11px 14px;border-bottom:1px solid var(--rule)}
+.todos li:last-child{border-bottom:0}
+.todos li>svg{width:22px;height:22px;color:var(--rule)}
+.todos li.done>svg{color:var(--accent)}
+.tt{font-weight:700}
+.qcard{padding:12px 16px 14px;display:grid;grid-template-columns:minmax(0,1fr);gap:6px;border-color:var(--accent)}
+.qc-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.qc-b{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.qc-b>div{min-width:0}
+.qc-b .go{flex:none;margin-left:0;padding:10px 22px}
+.qcard .pq-zh{font-size:1.25rem}
+.qcard .meta{margin-top:2px}
+
+/* dialogs: settings, help, the practice set-up, 记一条 */
+.dlg{overflow:auto}
+.dlg-voice{padding-top:0}
+.dlg .cap{border:0;padding:0;background:transparent}
+.dlg-p{margin:0;font-size:.95rem}
+.hh{margin:6px 0 0;font-size:.85rem;color:var(--accent)}
+.hl{margin:0;padding-left:1.2em;display:grid;gap:4px;font-size:.9rem}
+
+@media (min-width:900px){
+  .app{grid-template-columns:208px minmax(0,1fr)}
+  .side{display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;padding:18px 12px;border-right:1px solid var(--rule);background:var(--paper)}
+  .brand{font-family:var(--f-word);font-size:1.15rem;font-weight:700;padding:4px 10px 14px}
+  .side .nav{display:grid;gap:4px}
+  .side .navb{grid-template-columns:22px minmax(0,1fr) auto;justify-items:start;align-items:center;gap:10px;padding:9px 10px;font-size:.95rem}
+  .side .navb[aria-selected="true"]{background:var(--accent-soft);color:var(--ink)}
+  .side .nb{position:static}
+  .tabbar{display:none}
+  .main-col{max-width:1100px;padding-block:20px 48px;padding-left:28px;padding-right:28px}
+  body.in-practice .app{grid-template-columns:minmax(0,1fr)}
+  body.in-practice .main-col{max-width:900px}
+  .two{display:grid;grid-template-columns:250px minmax(0,1fr);gap:22px;align-items:start}
+  .pane,.side-idx{order:0}
+  .side-idx{display:block;position:sticky;top:64px;max-height:calc(100vh - 84px);overflow:auto}
+  .pg-more{display:none}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  .rows{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rows li.word.row{border-bottom:1px solid var(--rule)}
+  .sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sheet li,.sheet li:last-child{border-bottom:1px solid var(--rule)}
+  .today{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+  .t-main{order:0}
+  .t-side{display:grid;gap:12px;min-width:0}
+  .totop{left:auto;right:28px;bottom:24px}
+  .toast{bottom:28px}
+}

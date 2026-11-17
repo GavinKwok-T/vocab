@@ -151,7 +151,9 @@
     const ib=F('state/inbox.json')||{}, done=doneSet(), del=ib.deleted||{};
     Store.inbox=(ib.notes||[]).filter(n=>!done.has(n.id)&&!del[n.id]).sort((a,b)=>num(a.at)-num(b.at));
     const log=[]; Object.keys(files).filter(isPractice).forEach(p=>((files[p].data||{}).sessions||[]).forEach(s=>log.push(s)));
-    Store.practiceLog=log.sort((a,b)=>num(b.at)-num(a.at)).slice(0,5);
+    log.sort((a,b)=>num(b.at)-num(a.at));
+    Store.practiceAll=log;   /* every session of the last few practice days, newest first */
+    Store.practiceLog=log.slice(0,5);
   }
 
   /* ── two devices changed the same state file: keep both sides' work ── */

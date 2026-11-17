@@ -6,9 +6,13 @@
   let classes=[], inbox=[], capEditId=null;   /* capEditId: the inbox note being changed in the capture form */
   /* where the reader is: a section (days | class | errors, remembered), the open day and class date (default: the newest),
      the 目录 panel, the search text, the error-book filter */
-  let sec=store.get('sec')||({errors:'errors',class:'class'})[store.get('tab')]||'days', dayId='', cDate='', idxOpen=false, q='', errF='all';
-  let starOnly=store.get('star-only')==='1', errNewFirst=store.get('err-order')==='new';
-  if(!['days','class','errors','practice'].includes(sec)) sec='days';
+  let sec='today', pview=false, dayId='', cDate='', idxOpen=false, q='', errB=store.get('err-b')||'todo';   /* pview: a practice or the quiz is on screen */
+  let starOnly=store.get('star-only')==='1', errSort=store.get('err-sort')||'weak';
+  if(!['todo','near','done','all'].includes(errB)) errB='todo';
+  if(!['weak','new','old'].includes(errSort)) errSort='weak';
+  /* card notes (记法 / 词族 / 搭配) are folded by default: detAll opens them everywhere, detTog holds the cards that differ;
+     rowOpen holds the error-book rows that are expanded */
+  let detAll=store.get('det-all')==='1', inboxOpen=false; const detTog=new Set(), rowOpen=new Set();
   /* spelling progress per word (review/progress → words:{key:{streak,right,wrong,okDay,wrongDay,last,lastWrong}}),
      recent practice sessions, and the practice setup / session in progress */
   let progress={}, practiceLog=[], practice=null;
@@ -93,7 +97,7 @@
     u.onend=u.onerror=()=>{ if(btn) btn.classList.remove('on'); };
     synth.speak(u);
   }
-  let tt; function toast(msg){ let t=$('.toast'); if(!t){t=document.createElement('div');t.className='toast';t.setAttribute('role','status');document.body.appendChild(t);} t.textContent=msg; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,2600); }
+  let tt; function toast(msg){ let t=$('.toast'); if(!t){t=document.createElement('div');t.className='toast';t.setAttribute('role','status');} (document.querySelector('dialog[open]')||document.body).appendChild(t); t.textContent=msg; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,2600); }
 
   /* controls */
   function setPressed(ids,on){ ids.forEach(id=>$('#'+id).setAttribute('aria-pressed',id===on)); }
@@ -109,16 +113,41 @@
   $('#v-us').addEventListener('click',()=>{accent='en-US';store.set('accent-v2',accent);syncVoiceBtns();preload();});
   $('#r-slow').addEventListener('click',()=>{slow=!slow;store.set('slow',slow?'1':'0');syncVoiceBtns();});
   syncVoiceBtns();
+  $('#d-toggle').addEventListener('click',()=>{ detAll=!detAll; detTog.clear(); store.set('det-all',detAll?'1':'0'); render(); });
+  $('#q-open').addEventListener('click',()=>{ const s=$('#search'); if(s.hidden){ s.hidden=false; $('#q').focus(); } else { clearSearch(); render(); } });
+  /* 记一条: the capture form lives in its own dialog, opened from 今天 and 课堂 */
+  function openCap(){ const d=$('#cap-dlg'); if(!d.open) d.showModal(); $('#cap-text').focus(); }
+  $('#cap-dlg').addEventListener('close',()=>{ if(capEditId){ endEdit(true); render(); } });
+  document.addEventListener('toggle',e=>{ if(e.target.id==='inbox-d') inboxOpen=e.target.open; },true);
 
   /* rendering */
   const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   /* navigation: three sections. 每日单词 and 课堂 show one day / one date at a time, with ‹ › and a 目录 grouped by month;
      the search field covers every day, every class date and the error book */
+  const svg=d=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+  const I={
+    home:svg('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v12h14V9"/>'),
+    book:svg('<path d="M12 6.5V20"/><path d="M12 6.5C10 5 7 4.5 4 5v13.5c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z"/>'),
+    note:svg('<path d="M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2z"/><path d="M10 8h5"/><path d="M10 12h5"/>'),
+    mark:svg('<path d="M6 3h12v18l-6-4.5L6 21z"/>'),
+    info:svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5h.01"/>'),
+    play:svg('<path d="M7 5l12 7-12 7z"/>'),
+    plus:svg('<path d="M12 5v14"/><path d="M5 12h14"/>'),
+    ok:svg('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/>'),
+    todo:svg('<circle cx="12" cy="12" r="9"/>'),
+    sort:svg('<path d="M7 4v16"/><path d="m3.5 7.5 3.5-3.5 3.5 3.5"/><path d="M17 20V4"/><path d="m13.5 16.5 3.5 3.5 3.5-3.5"/>'),
+    bulb:svg('<path d="M9 18h6"/><path d="M10 21h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.6.5-1 1.2-1 2V17h-5v-.5c0-.8-.4-1.5-1-2z"/>')
+  };
+  /* four places: 今天 (what to do, how it is going), 单词, 课堂, 错词本. The same buttons fill the side bar (wide screens)
+     and the bottom tab bar (phones). Practice and the quiz are not a place: they take over the screen (pview) */
+  const NAV=[['today','今天',I.home],['days','单词',I.book],['class','课堂',I.note],['errors','错词本',I.mark]];
+  const todayStr=()=>localDate(new Date());
   function navHtml(){
-    const n=errors?(errors.words||[]).length:0, searching=!!q.trim();
-    const oq=openQuiz(), live=(practice&&!practice.done)||(oq&&!(oq.result&&oq.result.complete))?' •':'';   /* a practice under way, or tonight's quiz waiting */
-    const items=[['days','每日单词'],['class','课堂'+(inbox.length?' +'+inbox.length:'')],['errors','错词本'+(n?' '+n:'')],['practice','练习'+live]];
-    $('#tabs').innerHTML=items.map(([k,label])=>`<button class="tab${k==='errors'?' err':''}" role="tab" data-sec="${k}" aria-selected="${!searching&&k===sec}">${esc(label)}</button>`).join('');
+    const searching=!!q.trim(), oq=openQuiz();
+    const due=(practice&&!practice.done)||(oq&&String(oq.date)<=todayStr()&&!(oq.result&&oq.result.complete));
+    const badge={today:due?'dot':'',class:inbox.length?String(inbox.length):''};
+    const html=NAV.map(([k,label,ic])=>`<button class="navb" role="tab" data-sec="${k}" aria-selected="${!searching&&!pview&&k===sec}">${ic}<span class="nl">${label}</span>${badge[k]?`<span class="nb${badge[k]==='dot'?' dot':''}">${badge[k]==='dot'?'':esc(badge[k])}</span>`:''}</button>`).join('');
+    $('#tabs').innerHTML=html; $('#tabbar').innerHTML=html;
   }
   /* IPA: words carry ipaUs / ipaUk; error-book entries borrow them from the day they came from */
   function ipaOf(w){
@@ -199,14 +228,18 @@
     const list=Array.isArray(w[field])?w[field].filter(Boolean):[];
     return list.length?`<span class="xtra${cover(covered,mode,'点开看'+label)}"><span><b>${label}</b>${list.map(esc).join('；')}</span></span>`:'';
   }
-  /* star: {doc, gi, wi} for 课堂 cards, which get the 想用 toggle */
+  /* a card shows the word, IPA, meaning and example. Its notes (记法 = tip, 词族, 搭配) sit behind small chips: a tap on a
+     chip opens them for this card, 展开详情 in the tool row opens them on every card.
+     star: {doc, gi, wi} for 课堂 cards, which get the 想用 toggle */
+  const detOpen=key=>detAll!==detTog.has(key);
   function wordLi(w,n,extra,dayId,star){
     const dd=dayId?` data-day="${esc(dayId)}"`:'';
     const key=(dayId||'')+'|'+w.w, coverEn=isCovered(key,'en'), coverZh=isCovered(key,'zh');
     cards.push({w,day:dayId,key});
     const starBtn=star?`<button class="starbtn" data-star="${esc(star.doc)}|${star.gi}|${star.wi}" aria-pressed="${!!w.star}" aria-label="想用：${esc(w.w)}">${STAR}<span>想用</span></button>`:'';
+    const fam=Array.isArray(w.family)?w.family.filter(Boolean):[], col=Array.isArray(w.colloc)?w.colloc.filter(Boolean):[];
+    const chips=[w.tip?I.bulb+'记法':'',fam.length?'词族 '+fam.length:'',col.length?'搭配 '+col.length:''].filter(Boolean), open=detOpen(key);
     return `<li class="word" data-ci="${cards.length-1}">
-      <span class="num">${n}</span>
       <div class="main">
         <div class="wline"><span class="en${cover(coverEn,'en','点开看英文')}"><span>${esc(w.w)}</span></span>${posHtml(w)}${w.trap?'<span class="chip">易拼错</span>':''}${w.star&&!star?'<span class="chip want">想用</span>':''}${missSet&&missSet.has(w.w.toLowerCase())?'<span class="chip bad">错过</span>':''}</div>
         ${ipaHtml(w,coverEn)}
@@ -214,8 +247,8 @@
         ${extra||''}
         ${w.ex?`<span class="ex"><button class="speak small" data-say="${esc(w.ex)}"${dd} aria-label="朗读例句">${ICON}</button><span class="exs${cover(coverEn,'en','点开看例句')}"><span>${exHtml(w)}</span></span></span>`:''}
         ${w.ex&&w.exZh?`<span class="exzh${cover(coverZh,'zh','点开看中文')}"><span>${esc(w.exZh)}</span></span>`:''}
-        ${w.tip?`<span class="tip${cover(coverEn||coverZh,mode,'点开看说明')}"><span>${esc(w.tip)}</span></span>`:''}
-        ${xtraHtml(w,'family','词族',coverEn||coverZh)}${xtraHtml(w,'colloc','搭配',coverEn||coverZh)}
+        ${chips.length?`<div class="chips">${chips.map(c=>`<button type="button" class="chipb" data-det="1" aria-expanded="${open}">${c}</button>`).join('')}</div>`:''}
+        ${open&&chips.length?`<div class="det">${w.tip?`<span class="tip${cover(coverEn||coverZh,mode,'点开看说明')}"><span>${esc(w.tip)}</span></span>`:''}${xtraHtml(w,'family','词族',coverEn||coverZh)}${xtraHtml(w,'colloc','搭配',coverEn||coverZh)}</div>`:''}
       </div>
       <div class="acts"><button class="speak" data-say="${esc(w.w)}"${dd} aria-label="朗读 ${esc(w.w)}">${ICON}</button>${starBtn}</div>
     </li>`;
@@ -267,7 +300,7 @@
   function byMonth(list){ const out=[]; list.forEach(x=>{ const k=monthOf(x.date); let g=out[out.length-1]; if(!g||g.k!==k) out.push(g={k,items:[]}); g.items.push(x); }); return out; }
   function lowScore(s){ const m=/^(\d+)\s*\/\s*(\d+)$/.exec(s||''); return !!(m&&+m[2]&&(+m[1])/(+m[2])<0.7); }
   const countOf=x=>(x.groups||[]).reduce((s,g)=>s+(g.words||[]).length,0);
-  const classNames=x=>[...new Set((x.groups||[]).map(g=>String(g.name||'').split(' · ')[0]))].join('、');
+  const classNames=x=>[...new Set((x.groups||[]).map(g=>String(g.name||'').split(' · ')[0].split('（')[0]))].join('、');
   const starCount=x=>(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>w.star).length,0);
   const missCount=x=>missSet?(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>missSet.has(w.w.toLowerCase())).length,0):0;
   function pager(kind,title,older,newer){
@@ -282,73 +315,123 @@
     return `<nav class="idx" aria-label="目录">${groups.map(g=>`<section class="group"><h3>${esc(g.k)}</h3><ol>${g.items.map(row).join('')}</ol></section>`).join('')}</nav>`;
   }
   /* opt.star: 课堂 cards get the 想用 toggle; opt.only: starred words only, still numbered by their place in the full list */
+  /* a group heading keeps to its short name; what follows in brackets (a teacher's note on the group) opens from the ⓘ */
+  function groupHead(name){
+    const s=String(name||''), i=s.indexOf('（'), long=i>0&&s.length-i>18, short=long?s.slice(0,i):s, more=long?s.slice(i+1).replace(/）\s*$/,''):'';
+    return `<h3>${esc(short)}${more?`<button type="button" class="ib sm" data-note="${esc(more)}" data-nt="${esc(short)}" aria-label="这一组的说明">${I.info}</button>`:''}</h3>`;
+  }
   const groupsHtml=(x,docId,opt={})=>{ let n=0; return (x.groups||[]).map((g,gi)=>{
     const lis=(g.words||[]).map((w,wi)=>{ n++; return opt.only&&!w.star?'':wordLi(w,n,'',docId,opt.star?{doc:docId,gi,wi}:null); }).join('');
-    return lis?`<section class="group"><h3>${esc(g.name)}</h3><ol>${lis}</ol></section>`:''; }).join(''); };
+    return lis?`<section class="wg">${groupHead(g.name)}<ol class="cards">${lis}</ol></section>`:''; }).join(''); };
+  /* 单词 and 课堂: the index beside the cards on a wide screen; on a phone the pager's 目录 swaps the cards for it */
+  const twoPane=(index,body)=>`<div class="two${idxOpen?' idx-open':''}"><div class="side-idx">${index}</div><div class="pane">${body}</div></div>`;
 
   function renderDays(view){
-    if(!days.length){ view.innerHTML=daysLoaded?'<div class="empty"><strong>还没有单词</strong>跟 AI 说“今天的单词”，新词就会出现在这里。</div>':'<div class="empty"><strong>单词正在加载</strong>稍等一下。</div>'; return; }
+    if(!days.length){ view.innerHTML='<div class="empty"><strong>还没有单词</strong>跟 AI 说“今天的单词”，新词就会出现在这里。</div>'; return; }
     let i=days.findIndex(x=>x.id===dayId); if(i<0) i=days.length-1;
     const d=days[i]; loadPack(d.id);
     const head=pager('day',`Day ${d.day} · ${esc(d.topic||'')}`,days[i-1]&&days[i-1].id,days[i+1]&&days[i+1].id);
-    if(idxOpen){
-      view.innerHTML=head+idxHtml(byMonth([...days].reverse()),x=>`<li><button class="idx-row" data-go="day:${esc(x.id)}" aria-current="${x.id===d.id}"><span class="idx-k">Day ${x.day}</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m${lowScore(x.score)?' low':''}">${esc(shortDate(x.date))}${x.score?' · '+esc(x.score):''}</span></button></li>`);
-      return;
-    }
+    const index=idxHtml(byMonth([...days].reverse()),x=>`<li><button class="idx-row" data-go="day:${esc(x.id)}" aria-current="${x.id===d.id}"><span class="idx-k">Day ${x.day}</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m${lowScore(x.score)?' low':''}">${x.score?esc(x.score):esc(shortDate(x.date))}</span></button></li>`);
     const miss=missCount(d);
-    view.innerHTML=head+`<div class="meta-row"><p class="meta">${esc(fmtDate(d.date))} · ${countOf(d)} 个词 · ${d.score?'测验 '+esc(d.score):'还没考'}${miss?' · 错过 '+miss+' 个':''}</p><button class="pill" data-prgo="day:${esc(d.id)}">▶ 练这一天</button></div>`+groupsHtml(d,d.id);
+    const meta=`<div class="meta-row"><p class="meta">${esc(fmtDate(d.date))} · ${countOf(d)} 个词 · ${d.score?'测验 '+esc(d.score):'还没考'}${miss?' · 错过 '+miss+' 个':''}</p><button class="pill" data-prgo="day:${esc(d.id)}">${I.play}练这一天</button></div>`;
+    view.innerHTML=twoPane(index,head+meta+groupsHtml(d,d.id));
   }
 
   function renderClass(view){
-    const pend=inbox.length?`<section class="group inbox"><h3>待整理 · ${inbox.length} 条　跟 AI 说“整理课堂笔记”</h3><ol>${inbox.map(x=>`<li${x.id===capEditId?' class="editing"':''}>
+    const add=`<div class="meta-row"><button class="go sm" data-capopen="1">${I.plus}记一条</button><button type="button" class="ib sm" data-help="class" aria-label="课堂怎么用">${I.info}</button></div>`;
+    const pend=inbox.length?`<details class="group inbox" id="inbox-d"${inboxOpen||capEditId?' open':''}><summary><span>待整理 ${inbox.length} 条</span><span class="note">跟 AI 说“整理课堂笔记”</span></summary><ol>${inbox.map(x=>`<li${x.id===capEditId?' class="editing"':''}>
         <div class="main"><span class="in-t">${esc(x.text)}</span><span class="in-m">${[x.star?'★ 想用':'',x.cls||'',x.note||'',when(x.at)+(x.editedAt?'（改过）':'')].filter(Boolean).map(esc).join(' · ')}</span></div>
-        <div class="in-acts"><button class="unmiss" data-cedit="${esc(x.id)}">修改</button><button class="unmiss" data-del="${esc(x.id)}">删除</button></div></li>`).join('')}</ol></section>`:'';
-    if(!classes.length){ view.innerHTML=pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课上听到好词好句，课间在上面记一下就行，拼错、只写读音都可以；也可以把老师写的白板或本子拍照发给 AI。晚上说“整理课堂笔记”，整理好的会按日期出现在这里，能听发音。</div>`; return; }
+        <div class="in-acts"><button class="unmiss" data-cedit="${esc(x.id)}">修改</button><button class="unmiss" data-del="${esc(x.id)}">删除</button></div></li>`).join('')}</ol></details>`:'';
+    if(!classes.length){ view.innerHTML=add+pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课间点“记一条”随手记；晚上跟 AI 说“整理课堂笔记”。</div>`; return; }
     let i=classes.findIndex(x=>x.id===cDate); if(i<0) i=0;   /* classes are sorted newest first */
     const c=classes[i]; loadPack(c.id);
     const head=pager('cls',esc(fmtDate(c.date)),classes[i+1]&&classes[i+1].id,classes[i-1]&&classes[i-1].id);
-    if(idxOpen){
-      view.innerHTML=pend+head+idxHtml(byMonth(classes),x=>`<li><button class="idx-row" data-go="cls:${esc(x.id)}" aria-current="${x.id===c.id}"><span class="idx-k">${esc(shortDate(x.date))}</span><span class="idx-t">${esc(classNames(x))}</span><span class="idx-m">${countOf(x)} 条</span></button></li>`);
-      return;
-    }
-    const st=starCount(c);
-    const miss=missCount(c);
-    const meta=`<div class="meta-row"><p class="meta">${countOf(c)} 条${st?' · '+st+' 个想用':''}${miss?' · 错过 '+miss+' 个':''} · ${esc(classNames(c))}</p><div class="pacts"><button class="pill star" data-staronly="1" aria-pressed="${starOnly}">★ 只看想用</button>${starredPool().length?'<button class="pill" data-prgo="class">▶ 练想用的词</button>':''}</div></div>`;
-    view.innerHTML=pend+head+meta+(starOnly&&!st
-      ?'<div class="empty"><strong>这一天还没有标“想用”的词</strong>点卡片右边的“☆ 想用”就能标上，标了的会进下一次测验。</div>'
-      :groupsHtml(c,c.id,{star:true,only:starOnly}));
+    const index=idxHtml(byMonth(classes),x=>`<li><button class="idx-row" data-go="cls:${esc(x.id)}" aria-current="${x.id===c.id}"><span class="idx-k">${esc(shortDate(x.date))}</span><span class="idx-t">${esc(classNames(x))}</span><span class="idx-m">${countOf(x)} 条</span></button></li>`);
+    const st=starCount(c), miss=missCount(c);
+    const meta=`<div class="meta-row"><p class="meta">${countOf(c)} 条${st?' · '+st+' 个想用':''}${miss?' · 错过 '+miss+' 个':''}</p><div class="pacts"><button class="pill star" data-staronly="1" aria-pressed="${starOnly}">★ 只看想用</button>${starredPool().length?`<button class="pill" data-prgo="class">${I.play}练想用的词</button>`:''}</div></div>`;
+    const body=starOnly&&!st
+      ?'<div class="empty"><strong>这一天还没有标“想用”的词</strong>点卡片右边的“☆ 想用”就能标上。</div>'
+      :groupsHtml(c,c.id,{star:true,only:starOnly});
+    view.innerHTML=add+pend+twoPane(index,head+meta+body);
   }
 
-  /* spelling progress on an error-book card: a dot for each day in a row it was spelled right (counted at most once a day,
-     reset by any miss); at three it may come out — the reader still removes it themself */
-  function progLine(w){
-    const p=progress[w.w.toLowerCase()]||{}, s=Math.max(0,Math.min(3,p.streak|0));
-    const dots=`<span class="streak" aria-hidden="true">${[0,1,2].map(i=>`<i class="${i<s?'on':''}"></i>`).join('')}</span>`;
-    const txt=s>=3?'<span class="chip done">已连续 3 天拼对，可以移出了</span>':(s?`连续 ${s} 天拼对`:'还没有连续拼对');
-    const lw=mode!=='en'&&p.lastWrong&&p.wrongDay?` · ${esc(shortDate(p.wrongDay))} 拼成 ${esc(p.lastWrong)}`:'';
-    return `<span class="prog-line">${dots}<span>${txt}${lw}</span></span>`;
+  /* 今天: what is waiting (tonight's quiz, the newest day, the error book, class notes) and how it is going
+     (days learned, cards, error-book size, the last quiz scores) */
+  const WK=['日','一','二','三','四','五','六'];
+  function pctOf(s){ const m=/^(\d+)\s*\/\s*(\d+)$/.exec(s||''); return m&&+m[2]?Math.round(+m[1]/+m[2]*100):null; }
+  function renderToday(view){
+    const now=new Date(), t=todayStr(), ws=errors?errors.words||[]:[];
+    const nCards=days.reduce((s,d)=>s+countOf(d),0)+classes.reduce((s,c)=>s+countOf(c),0);
+    const stats=`<section class="stats"><div class="stat"><span>已学</span><b>${days.length}</b> 天</div><div class="stat"><span>卡片</span><b>${nCards}</b></div><div class="stat"><span>错词本</span><b>${ws.length}</b></div></section>`;
+    /* the last quizzes with a score (written by the AI when it grades) */
+    const scored=quizzes.filter(x=>x.graded&&pctOf(x.score)!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-7);
+    const last=scored[scored.length-1];
+    const chart=scored.length?`<section class="group chart"><div class="chart-h"><span>近 ${scored.length} 次测验</span><b>${esc(last.score)} · ${pctOf(last.score)}%</b></div>
+        <div class="bars" role="img" aria-label="近 ${scored.length} 次测验的正确率：${scored.map(x=>shortDate(x.date)+' '+pctOf(x.score)+'%').join('，')}">${scored.map((x,i)=>{ const p=pctOf(x.score); return `<i class="${p<70?'low':''}${i===scored.length-1?' cur':''}" style="height:${Math.max(10,Math.round((p-50)/50*100))}%" title="${esc(shortDate(x.date))} · ${esc(x.score)}"></i>`; }).join('')}</div>
+        <div class="chart-x"><span>${esc(shortDate(scored[0].date))}</span><span>${esc(shortDate(last.date))}</span></div></section>`:'';
+    const d=days[days.length-1], all=Store.practiceAll||[];
+    const dayRuns=d?all.filter(s=>s.src==='day'&&String(s.label||'').startsWith(`Day ${d.day} `)):[];
+    const errRuns=all.filter(s=>s.src==='errors'&&s.date===t);
+    const waiting=ws.filter(w=>streakOf(w)<2).length;
+    const row=(done,title,sub,btn)=>`<li class="${done?'done':''}">${done?I.ok:I.todo}<div class="main"><span class="tt">${title}</span><span class="in-m">${sub}</span></div>${btn}</li>`;
+    const rows=(d?row(dayRuns.length>0,`练新词 Day ${d.day}`,esc(d.topic||'')+' · '+(dayRuns.length?`已练 ${dayRuns.length} 遍，最近 ${dayRuns[0].right|0}/${dayRuns[0].done|0}`:`${countOf(d)} 个词，还没练`),`<button class="pill" data-prgo="day:${esc(d.id)}">${I.play}练</button>`):'')
+      +(ws.length?row(errRuns.length>0,'错词回炉',`待练 ${waiting} 个`+(errRuns.length?` · 今天练了 ${errRuns.length} 次`:''),`<button class="pill" data-prgo="errors">${I.play}练</button>`):'')
+      +row(false,'课堂笔记',inbox.length?`待整理 ${inbox.length} 条`:'课间听到的词随手记',`<button class="pill" data-capopen="1">${I.plus}记一条</button>`);
+    const resume=practice&&!practice.done&&!practice.sheet?`<section class="group qcard"><div class="qc-b"><div><span class="plab">练习做到一半</span><p class="meta">${esc(practice.label)} · 第 ${practice.i+1} / ${practice.items.length} 题</p></div><button class="go" data-prgo="resume">继续</button></div></section>`:'';
+    const recent=practiceLog.slice(0,5);
+    const rec=recent.length?`<section class="group recent"><h3>最近的练习</h3><ol>${recent.map(r=>`<li><span>${esc(when(r.at))} · ${esc(r.label||'')} · ${esc(MODE_L[r.mode]||'')}</span><span class="r-s">${r.right|0} / ${r.done|0}</span></li>`).join('')}</ol></section>`:'';
+    view.innerHTML=`<p class="meta">${now.getMonth()+1} 月 ${now.getDate()} 日 周${WK[now.getDay()]}</p>
+      <div class="today">
+        <div class="t-main">${quizCardHtml()}${resume}<section class="group"><ol class="todos">${rows}</ol></section></div>
+        <div class="t-side">${stats}${chart}${rec}</div>
+      </div>`;
   }
-  /* error book: grouped by where each word came from, numbered by its place in the whole book */
+
+  /* error book: one line per word (word, meaning, the three streak dots, a speak button), sorted by how much it needs
+     practice; a tap on the line opens its record. Three piles by streak: 待练 (0–1), 快掌握 (2), 可移出 (3: the reader still
+     removes it themself) */
   const srcOf=w=>!w.day?'other':(String(w.day).startsWith('c-')?'class':'day');
   function srcLabel(key){
     if(key==='other') return '作文和自己加的';
     if(key.startsWith('c-')) return '课堂 · '+fmtDate(key.slice(2));
     const d=days.find(x=>x.id===key); return d?`Day ${d.day} · ${d.topic||''}`:key;
   }
+  const bucketOf=w=>{ const s=streakOf(w); return s>=3?'done':s===2?'near':'todo'; };
+  const BUCKETS=[['todo','待练'],['near','快掌握'],['done','可移出'],['all','全部']];
+  const SORTS={weak:'最该练的在前',new:'最新加入在前',old:'最早加入在前'};
+  function errRow(w){
+    const key=(w.day||'')+'|'+w.w, coverEn=isCovered(key,'en'), coverZh=isCovered(key,'zh'), open=rowOpen.has(key);
+    cards.push({w,day:w.day,key});
+    const s=Math.max(0,Math.min(3,streakOf(w))), dd=w.day?` data-day="${esc(w.day)}"`:'';
+    let det='';
+    if(open){
+      const c=cardFor(w)||{}, exw=w.ex?w:c, src=srcOf(w);
+      det=`<div class="det">
+        <div class="wline">${posHtml(w)}${ipaHtml(w,coverEn)}</div>
+        ${w.wrong?`<span class="wrong${cover(coverEn,'en','点开看错误记录')}"><span>${esc(w.wrong)}</span></span>`:''}
+        ${w.tip?`<span class="tip${cover(coverEn||coverZh,mode,'点开看说明')}"><span>${esc(w.tip)}</span></span>`:''}
+        ${exw&&exw.ex?`<span class="exp${cover(coverEn,'en','点开看例句')}"><span>${exPlain(exw)}</span></span>`:''}
+        <div class="meta-row">${src==='other'?`<span class="note">${esc(srcLabel('other'))}</span>`:`<button class="src-go" data-go="${src==='class'?'cls':'day'}:${esc(w.day)}">${esc(srcLabel(w.day))} ›</button>`}<button class="unmiss" data-unmiss="${esc(w.w)}">已掌握，移出</button></div>
+      </div>`;
+    }
+    return `<li class="word row${open?' open':''}" data-ci="${cards.length-1}" data-row="${esc(key)}">
+      <div class="main"><span class="en${cover(coverEn,'en','点开看英文')}"><span>${esc(w.w)}</span></span><span class="zh${cover(coverZh,'zh','点开看中文')}"><span>${esc(w.zh)}</span></span>${det}</div>
+      <div class="racts"><span class="streak" role="img" aria-label="连续 ${s} 天拼对">${[0,1,2].map(k=>`<i class="${k<s?'on':''}"></i>`).join('')}</span><button class="speak small" data-say="${esc(w.w)}"${dd} aria-label="朗读 ${esc(w.w)}">${ICON}</button></div>
+    </li>`;
+  }
   function renderErrors(view){
     const ws=errors?errors.words||[]:[];
     if(!ws.length){ view.innerHTML='<div class="empty"><strong>错词本是空的</strong>测验里错过的词会加到这里。</div>'; return; }
-    const cnt={all:ws.length,day:0,class:0,other:0}; ws.forEach(w=>cnt[srcOf(w)]++);
-    if(errF!=='all'&&!cnt[errF]) errF='all';
-    const F=[['all','全部'],['day','每日单词'],['class','课堂'],['other','作文和自加']].filter(([k])=>k==='all'||cnt[k]);
-    /* 正序 = book order (oldest first); 倒序 = newest first, both for the groups and inside each group; numbers stay the book's */
-    const groups=new Map(), order=ws.map((w,i)=>[w,i]); if(errNewFirst) order.reverse();
-    order.forEach(([w,i])=>{ if(errF!=='all'&&srcOf(w)!==errF) return; const k=w.day||'other'; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push([w,i]); });
-    const sortBtn=`<button class="pill sort" data-errsort="1" aria-label="切换排序，现在是${errNewFirst?'最新在前':'最早在前'}">⇅ ${errNewFirst?'最新在前':'最早在前'}</button>`;
-    const extra=w=>(w.wrong?`<span class="wrong${cover(isCovered((w.day||'')+'|'+w.w,'en'),'en','点开看错误记录')}"><span>错误记录：${esc(w.wrong)}</span></span>`:'')+progLine(w)+`<button class="unmiss" data-unmiss="${esc(w.w)}">已掌握，移出</button>`;
-    view.innerHTML=`<div class="day-head"><h2>错词本</h2><span>${ws.length} 个词 · 测验里错过的词都在这里，确定掌握了再自己移出</span></div>`+
-      `<div class="err-tools">${F.length>2?`<div class="filters" role="group" aria-label="按来源筛选">${F.map(([k,l])=>`<button class="pill" data-errf="${k}" aria-pressed="${k===errF}">${l} ${cnt[k]}</button>`).join('')}</div>`:''}<button class="pill" data-prgo="errors">▶ 练错词本</button>${sortBtn}</div>`+
-      [...groups].map(([k,items])=>`<section class="group"><h3>${esc(srcLabel(k))} · ${items.length} 个</h3><ol>${items.map(([w,i])=>wordLi(w,i+1,extra(w),w.day)).join('')}</ol></section>`).join('');
+    const cnt={todo:0,near:0,done:0,all:ws.length}; ws.forEach(w=>cnt[bucketOf(w)]++);
+    const lastOf=w=>String((progress[String(w.w).toLowerCase()]||{}).last||'');
+    const list=ws.map((w,i)=>[w,i]).filter(([w])=>errB==='all'||bucketOf(w)===errB);
+    if(errSort==='new') list.reverse();
+    else if(errSort==='weak') list.sort((a,b)=>streakOf(a[0])-streakOf(b[0])||lastOf(a[0]).localeCompare(lastOf(b[0]))||a[1]-b[1]);
+    const head=`<div class="meta-row"><div class="filters" role="group" aria-label="按掌握程度看">${BUCKETS.map(([k,l])=>`<button class="pill${k==='todo'?' warn':''}" data-errb="${k}" aria-pressed="${k===errB}">${l} ${cnt[k]}</button>`).join('')}</div></div>
+      <div class="meta-row"><button class="pill" data-prgo="errors">${I.play}练错词本</button><span class="pacts"><button class="pill" data-errsort="1" aria-label="换一种排序，现在是${SORTS[errSort]}">${I.sort}${SORTS[errSort]}</button><button type="button" class="ib sm" data-help="errors" aria-label="错词本怎么用">${I.info}</button></span></div>`;
+    view.innerHTML=head+(list.length
+      ?`<section class="group"><ol class="rows">${list.map(([w])=>errRow(w)).join('')}</ol></section>`
+      :`<div class="empty"><strong>这一档现在没有词</strong>${errB==='done'?'连续 3 天拼对的词会出现在这里，移不移出由你决定。':'换一档看看。'}</div>`);
   }
 
   /* search: English (whole word first, then prefix, then anywhere), then Chinese meaning, then example sentences */
@@ -367,7 +450,7 @@
     const list=hits.slice(0,50);
     const src=h=>`<span class="src"><button class="src-go" data-go="${esc(h.go)}">${esc(h.label)} ›</button>${errSet.has(h.w.w.toLowerCase())?'<span class="chip bad">在错词本里</span>':''}</span>`;
     view.innerHTML=hits.length
-      ?`<div class="day-head"><h2>搜索结果</h2><span>“${esc(raw)}”找到 ${hits.length} 条${hits.length>list.length?'，先显示前 '+list.length+' 条':''}</span></div><section class="group"><ol>${list.map((h,i)=>wordLi(h.w,i+1,src(h),h.id,h.star)).join('')}</ol></section>`
+      ?`<div class="day-head"><h2>搜索结果</h2><span>“${esc(raw)}”找到 ${hits.length} 条${hits.length>list.length?'，先显示前 '+list.length+' 条':''}</span></div><section class="wg"><ol class="cards">${list.map((h,i)=>wordLi(h.w,i+1,src(h),h.id,h.star)).join('')}</ol></section>`
       :`<div class="empty"><strong>没有找到“${esc(raw)}”</strong>换个拼法试试，或者搜中文意思。每日单词、课堂词句和错词本都在搜索范围里。</div>`;
   }
 
@@ -412,7 +495,7 @@
     parkPractice();
     practice={id:'p-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),src,label,mode:mdMode||prMode,items,
       i:0,results:[],answered:null,saved:0,logged:0,startedAt:Date.now(),done:false,added:false};
-    sec='practice'; store.set('sec',sec); idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
+    pview=true; idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
     focusAnswer(); autoPlay();
   }
   function beginFromSetup(){
@@ -595,7 +678,7 @@
     if(!Store.ready){ toast('数据还在读取，稍等几秒再点'); return; }
     const r=q.result||{}, raw=quizItems(q); if(!raw.length){ toast('这次测验还没有题'); return; }
     if(r.complete){ render(); return; }
-    if(practice&&practice.sheet&&practice.quizId===q.id&&!practice.done){ sec='practice'; store.set('sec',sec); render(); return; }
+    if(practice&&practice.sheet&&practice.quizId===q.id&&!practice.done){ pview=true; render(); return; }
     parkPractice();
     /* drafts: the quiz doc's, else this device's copy (a draft that never reached the doc); an older quiz kept answers instead */
     const dbDrafts=Array.isArray(r.drafts)?r.drafts.map(x=>String(x||'')):(r.answers||[]).map(a=>String((a&&a.answer)||''));
@@ -607,7 +690,7 @@
       startedAt:r.startedAt||Date.now(),done:false,added:true};
     /* the first start freezes the list of questions (with the starred class words added) and sends it up */
     if(!(Array.isArray(r.items)&&r.items.length)){ Store.saveQuiz(q.id,sheetResult(s)); s.draftSaved=JSON.stringify(s.drafts); }
-    practice=s; sec='practice'; store.set('sec',sec); idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
+    practice=s; pview=true; idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
     const first=s.drafts.findIndex(x=>!x.trim()), inp=$(`.sin[data-si="${first<0?0:first}"]`);
     if(inp){ inp.focus({preventScroll:true}); if(first>0) inp.scrollIntoView({block:'center'}); }
     if(JSON.stringify(s.drafts)!==s.draftSaved) saveDrafts(s);
@@ -617,15 +700,14 @@
     const r=q.result||{}, frozen=Array.isArray(r.items)&&r.items.length;
     const list=frozen?r.items:(q.items||[]).concat(quizStarItems(q)), total=list.length;
     const filled=Array.isArray(r.drafts)?filledOf(r.drafts):(r.answers||[]).length;
-    const by=new Map(); list.forEach(i=>{ const g=i.group||'其他'; by.set(g,(by.get(g)||0)+1); });
+    const by=new Map(); list.forEach(i=>{ const g=String(i.group||'其他').replace(/^Day (\d+) · .*$/,'Day $1 新词'); by.set(g,(by.get(g)||0)+1); });
     const wait=frozen?0:Math.max(0,starQueue(q).length-QUIZ_STARS);
-    const desc=[...by].map(([g,c])=>`${g} ${c} 个`).join('、')+(wait?`（另外 ${wait} 个想用的课堂词排到之后的测验，每次最多考 ${QUIZ_STARS} 个）`:'');
-    const head=`<span class="plab">今晚测验 · ${esc(fmtDate(q.date))}</span>`;
-    if(r.complete) return `<section class="group prac-set quiz-card">${head}<div class="score">${r.right|0} / ${r.total|0}</div><p class="quiz-next">已经交卷了。${Store.status.pending?'答案还在同步，等右上角显示“已同步”。':''}回到 AI 的会话，说“考完了”，我来批改、出新词。</p></section>`;
-    return `<section class="group prac-set quiz-card">${head}
-      <div class="pq-zh">${filled?`已写 ${filled} / ${total} 题`:`${total} 题`}</div>
-      <p class="meta">${esc(desc)}。像一张卷子：看中文写英文，全部写完再交，交卷前可以随便改；交卷后回到 AI 的会话说“考完了”。</p>
-      <button class="go" data-quiz="${esc(q.id)}"${total?'':' disabled'}>${filled||frozen?'继续':'开始'}</button></section>`;
+    const t=todayStr(), name=(q.date===t?'今晚测验':String(q.date)>t?'下一次测验':'测验')+' · '+fmtDate(q.date);
+    const head=`<div class="qc-h"><span class="plab">${esc(name)}</span><button type="button" class="ib sm" data-help="quiz" aria-label="测验怎么考">${I.info}</button></div>`;
+    if(r.complete) return `<section class="group qcard">${head}<div class="score">${r.right|0} / ${r.total|0}</div><p class="quiz-next">${Store.status.pending?'已交卷，答案还在同步，等右上角显示“已同步”。':'已交卷。回到 AI 的会话说“考完了”。'}</p></section>`;
+    return `<section class="group qcard">${head}
+      <div class="qc-b"><div><div class="pq-zh">${filled?`已写 ${filled} / ${total}`:`${total} 题`}</div><p class="meta">${esc([...by].map(([g,c])=>`${g} ${c}`).join(' · '))}${wait?`；另有 ${wait} 个想用的词排到之后`:''}</p></div>
+      <button class="go" data-quiz="${esc(q.id)}"${total?'':' disabled'}>${filled||frozen?'继续':'开始'}</button></div></section>`;
   }
   function quizSheet(s){
     const total=s.items.length;
@@ -635,8 +717,7 @@
         <input class="sin" data-si="${i}" value="${esc(s.drafts[i]||'')}" maxlength="80" aria-label="第 ${i+1} 题：${esc(w.zh)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="${i+1<total?'next':'done'}"></div></li>`;
     }).join('');
     return `<div class="prac">
-      <div class="prac-top"><span>${esc(s.label)} · ${total} 题</span><button type="button" class="ghost" data-pquit="1">先停在这里</button></div>
-      <p class="meta">看中文写英文。回车跳到下一题，点哪题就改哪题，写的内容会自动保存。全部写完点最下面的“交卷”，交卷后才看对错。</p>
+      <div class="prac-top"><span>${esc(s.label)} · ${total} 题</span><span class="pacts"><button type="button" class="ib sm" data-help="quiz" aria-label="测验怎么考">${I.info}</button><button type="button" class="ghost" data-pquit="1">先停在这里</button></span></div>
       <section class="group"><ol class="sheet">${rows}</ol></section>
       <div class="sheet-bar"><span class="sheet-count" id="sh-n">已写 ${filledOf(s.drafts)} / ${total}</span><button type="button" class="go" data-psubmit="1">交卷</button></div>
     </div>`;
@@ -658,26 +739,22 @@
     store.set('qdraft:'+s.quizId,'');
     saveNow(s); render(); window.scrollTo({top:0});
   }
-  function practiceHome(){
+  /* the practice set-up, shown in the dialog: what to practise, how, how many */
+  function practiceSetupHtml(){
     const eAll=errorsPool(false).length, ePool=errorsPool(prSkip).length, cPool=starredPool().length, did=curDayId(), dPool=dayPool(did).length;
     const n=prSrc==='day'?dPool:prSrc==='class'?cPool:ePool, take=prCount==='all'?n:Math.min(+prCount,n);
-    const srcs=[['errors',`错词本 ${eAll}`],['day','每日单词'],['class',`课堂想用的词 ${cPool}`]];
+    const srcs=[['errors',`错词本 ${eAll}`],['day','每日单词'],['class',`想用的课堂词 ${cPool}`]];
     const dayOpts=[...days].reverse().map(d=>`<option value="${esc(d.id)}"${d.id===did?' selected':''}>Day ${d.day} · ${esc(d.topic||'')}（${dayPool(d.id).length} 个）</option>`).join('');
-    const empty=prSrc==='errors'&&eAll&&!ePool?'错词本里的词都已经连续 3 天拼对了，可以取消上面的勾，全部再练一遍。'
-      :(n?'':(prSrc==='class'?'还没有标“想用”的课堂词。到「课堂」页点卡片右边的“☆ 想用”就能加进来。':'这里还没有词。'));
-    const recent=practiceLog.slice(0,5);
-    return `<div class="prac">${quizCardHtml()}<div class="day-head"><h2>拼写练习</h2><span>看中文或听发音，把英文拼出来，马上知道对错：拼对自动进下一题，拼错要照着正确拼写打一遍。错词本里的词连续 3 天拼对，就可以考虑移出</span></div>
-      <section class="group prac-set">
-        <div class="prow"><span class="plab">练什么</span><div class="filters" role="group" aria-label="练什么">${srcs.map(([k,l])=>`<button class="pill" data-psrc="${k}" aria-pressed="${k===prSrc}">${esc(l)}</button>`).join('')}</div></div>
-        ${prSrc==='day'&&days.length?`<div class="prow"><label class="plab" for="pr-day">哪一天</label><select id="pr-day">${dayOpts}</select></div>`:''}
-        ${prSrc==='errors'?`<label class="pcheck"><input type="checkbox" id="pr-skip"${prSkip?' checked':''}>跳过已经连续 3 天拼对的</label>`:''}
-        <div class="prow"><span class="plab">怎么练</span><div class="filters" role="group" aria-label="怎么练">${Object.entries(MODE_L).map(([k,l])=>`<button class="pill" data-pmode="${k}" aria-pressed="${k===prMode}">${l}</button>`).join('')}</div></div>
-        <div class="prow"><span class="plab">题数</span><div class="filters" role="group" aria-label="题数">${[['10','10 题'],['20','20 题'],['all',`全部 ${n}`]].map(([k,l])=>`<button class="pill" data-pcount="${k}" aria-pressed="${k===prCount}">${l}</button>`).join('')}</div></div>
-        ${empty?`<p class="note">${esc(empty)}</p>`:''}
-        <button class="go" data-pstart="1"${take?'':' disabled'}>开始练习${take?`（${take} 题）`:''}</button>
-      </section>
-      ${recent.length?`<section class="group recent"><h3>最近的练习</h3><ol>${recent.map(r=>`<li><span>${esc(when(r.at))} · ${esc(r.label||'')} · ${esc(MODE_L[r.mode]||'')}</span><span class="r-s">${r.right|0} / ${r.done|0}</span></li>`).join('')}</ol></section>`:''}
-    </div>`;
+    const empty=prSrc==='errors'&&eAll&&!ePool?'错词本里的词都已经连续 3 天拼对了，取消上面的勾可以全部再练一遍。'
+      :(n?'':(prSrc==='class'?'还没有标“想用”的课堂词。到「课堂」页点卡片右边的“☆ 想用”。':'这里还没有词。'));
+    return `<div class="dlg-h"><h2 id="dlg-h">拼写练习</h2><span class="pacts"><button type="button" class="ib sm" data-help="practice" aria-label="练习怎么算">${I.info}</button><button type="button" class="clr" data-close="1" aria-label="关闭">×</button></span></div>
+      <div class="prow"><span class="plab">练什么</span><div class="filters" role="group" aria-label="练什么">${srcs.map(([k,l])=>`<button class="pill" data-psrc="${k}" aria-pressed="${k===prSrc}">${esc(l)}</button>`).join('')}</div></div>
+      ${prSrc==='day'&&days.length?`<div class="prow"><label class="plab" for="pr-day">哪一天</label><select id="pr-day">${dayOpts}</select></div>`:''}
+      ${prSrc==='errors'?`<label class="pcheck"><input type="checkbox" id="pr-skip"${prSkip?' checked':''}>跳过已经连续 3 天拼对的</label>`:''}
+      <div class="prow"><span class="plab">怎么练</span><div class="filters" role="group" aria-label="怎么练">${Object.entries(MODE_L).map(([k,l])=>`<button class="pill" data-pmode="${k}" aria-pressed="${k===prMode}">${l}</button>`).join('')}</div></div>
+      <div class="prow"><span class="plab">题数</span><div class="filters" role="group" aria-label="题数">${[['10','10 题'],['20','20 题'],['all',`全部 ${n}`]].map(([k,l])=>`<button class="pill" data-pcount="${k}" aria-pressed="${k===prCount}">${l}</button>`).join('')}</div></div>
+      ${empty?`<p class="note">${esc(empty)}</p>`:''}
+      <button class="go wide" data-pstart="1"${take?'':' disabled'}>开始${take?`（${take} 题）`:''}</button>`;
   }
   function practiceCard(s){
     const it=s.items[s.i], w=it.w, a=s.answered, total=s.items.length;
@@ -745,7 +822,7 @@
           ${allSaved&&up.pending&&!up.syncing?'<button class="go" data-presave="1">再同步一次</button>':''}
           ${miss.length?`<button class="${allSaved&&up.pending&&!up.syncing?'ghost':'go'}" data-pretry="1">再练一次错的 ${miss.length} 个</button>`:''}
           ${notIn.length&&!s.added?`<button class="ghost" data-padd="1">把不在错词本里的 ${notIn.length} 个加进错词本</button>`:''}
-          <button class="ghost" data-phome="1">回到练习首页</button>
+          <button class="ghost" data-phome="1">完成</button>
         </div></section>
       ${bad.length?`<section class="group miss"><h3>错了 ${bad.length} 个</h3><ol>${bad.map(r=>resultRow(s,r,have)).join('')}</ol></section>`:''}
       ${good.length?`<section class="group miss"><h3>对了 ${good.length} 个</h3><ol>${good.map(r=>resultRow(s,r,have)).join('')}</ol></section>`:''}
@@ -753,23 +830,29 @@
   }
   function renderPractice(view){
     const s=practice;
-    view.innerHTML=!s?practiceHome():s.done?practiceSummary(s):s.sheet?quizSheet(s):practiceCard(s);
+    view.innerHTML=s.done?practiceSummary(s):s.sheet?quizSheet(s):practiceCard(s);
   }
 
+  const TITLES={today:'今天',days:'单词',class:'课堂',errors:'错词本'};
   function render(){
+    if(!practice) pview=false;
     navHtml(); hidePop(); cards=[];
-    const view=$('#view'), searching=!!q.trim();
-    if(!Store.ready){ $('#cap-wrap').hidden=true; document.body.classList.remove('has-bar'); view.innerHTML=gateHtml(); return; }
+    const view=$('#view'), searching=!!q.trim(), ready=Store.ready, inP=pview&&ready;
+    document.body.classList.toggle('in-practice',inP&&!practice.done);   /* a question or the quiz sheet: nothing else on screen */
+    document.body.classList.toggle('has-bar',inP&&!!practice.sheet&&!practice.done);
+    $('#title').textContent=!ready?'雅思词汇本':inP?(practice.sheet?'测验':'练习'):searching?'搜索':TITLES[sec];
+    $('#tools').hidden=!ready||inP||(!searching&&sec==='today');
+    $('#d-toggle').hidden=!searching&&sec==='errors';
+    $('#d-toggle').setAttribute('aria-pressed',detAll);
+    if(!ready){ view.innerHTML=gateHtml(); return; }
     /* a re-render (live data, a save) must not wipe what is being typed into the practice box */
     const ae=document.activeElement, pa=$('#pans');
     const keep=pa&&!pa.readOnly?{k:pa.dataset.k,v:pa.value,f:ae===pa,s:pa.selectionStart,e:pa.selectionEnd}:null;
     const sk=ae&&ae.classList&&ae.classList.contains('sin')?{i:ae.dataset.si,s:ae.selectionStart,e:ae.selectionEnd}:null;
-    $('#cap-wrap').hidden=searching||sec!=='class';
-    $('#m-all').parentElement.hidden=!searching&&sec==='practice';
-    document.body.classList.toggle('has-bar',!searching&&sec==='practice'&&!!practice&&!!practice.sheet&&!practice.done);
-    missSet=!searching&&(sec==='days'||sec==='class')?errSetNow():null;
-    if(searching) renderSearch(view);
-    else if(sec==='practice') renderPractice(view);
+    missSet=!searching&&!inP&&(sec==='days'||sec==='class')?errSetNow():null;
+    if(inP) renderPractice(view);
+    else if(searching) renderSearch(view);
+    else if(sec==='today') renderToday(view);
     else if(sec==='class') renderClass(view);
     else if(sec==='errors') renderErrors(view);
     else renderDays(view);
@@ -781,13 +864,13 @@
   function openRef(ref){
     const at=ref.indexOf(':'), k=ref.slice(0,at), v=ref.slice(at+1); if(!v) return;
     if(k==='day'){ sec='days'; dayId=v; } else if(k==='cls'){ sec='class'; cDate=v; } else if(k==='sec'){ sec=v; }
-    store.set('sec',sec); idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
+    pview=false; idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
   }
-  function clearSearch(){ if(!q) return; q=''; $('#q').value=''; $('#q-clear').hidden=true; }
+  function clearSearch(){ $('#search').hidden=true; if(!q) return; q=''; $('#q').value=''; }
   let qTimer;
-  $('#q').addEventListener('input',e=>{ clearTimeout(qTimer); const v=e.target.value; $('#q-clear').hidden=!v; qTimer=setTimeout(()=>{ q=v; render(); },150); });
-  $('#q').addEventListener('keydown',e=>{ if(e.key==='Escape'&&q){ clearSearch(); render(); } if(e.key==='Enter') e.target.blur(); });
-  $('#q-clear').addEventListener('click',()=>{ clearSearch(); render(); $('#q').focus(); });
+  $('#q').addEventListener('input',e=>{ clearTimeout(qTimer); const v=e.target.value; qTimer=setTimeout(()=>{ q=v; render(); },150); });
+  $('#q').addEventListener('keydown',e=>{ if(e.key==='Escape'){ clearSearch(); render(); } if(e.key==='Enter') e.target.blur(); });
+  $('#q-clear').addEventListener('click',()=>{ clearSearch(); render(); });
   /* opening one covered block opens its partners in the same card: Chinese word + sentence, or English word + IPA */
   function uncover(c){
     const li=c.closest('li.word'), card=li&&cards[+li.dataset.ci];
@@ -798,7 +881,11 @@
     /* connection and settings */
     if(e.target.closest('#sync-btn')||e.target.closest('[data-settings]')){ openDlg('settings'); return; }
     const hp=e.target.closest('[data-help]'); if(hp){ openDlg(hp.dataset.help); return; }
-    if(e.target.closest('[data-close]')||e.target===$('#dlg')){ $('#dlg').close(); return; }
+    const cl=e.target.closest('[data-close]'); if(cl){ cl.closest('dialog').close(); return; }
+    if(e.target.tagName==='DIALOG'){ e.target.close(); return; }   /* a tap on the backdrop */
+    if(e.target.closest('[data-capopen]')){ if(capEditId) endEdit(true); openCap(); return; }
+    const nt=e.target.closest('[data-note]'); if(nt){ openDlg('text',{title:nt.dataset.nt,text:nt.dataset.note}); return; }
+    const dt=e.target.closest('[data-det]'); if(dt){ const li=dt.closest('li.word'), c=li&&cards[+li.dataset.ci]; if(c){ detTog.has(c.key)?detTog.delete(c.key):detTog.add(c.key); render(); } return; }
     if(e.target.closest('[data-syncnow]')){ Store.sync().then(()=>Store.refresh()); return; }
     if(e.target.closest('[data-reload]')){ Store.refresh(true); return; }
     const sg=e.target.closest('[data-signout]'); if(sg){ signOut(sg); return; }
@@ -811,21 +898,22 @@
     hidePop();
     const go=e.target.closest('[data-go]'); if(go){ if(!go.disabled) openRef(go.dataset.go); return; }
     const ix=e.target.closest('[data-idx]'); if(ix){ idxOpen=!idxOpen; render(); return; }
-    const sc=e.target.closest('[data-sec]'); if(sc){ sec=sc.dataset.sec; store.set('sec',sec); idxOpen=false; clearSearch(); render(); window.scrollTo({top:0}); return; }
-    const ef=e.target.closest('[data-errf]'); if(ef){ errF=ef.dataset.errf; render(); return; }
-    const es=e.target.closest('[data-errsort]'); if(es){ errNewFirst=!errNewFirst; store.set('err-order',errNewFirst?'new':'old'); render(); return; }
+    const sc=e.target.closest('[data-sec]'); if(sc){ sec=sc.dataset.sec; pview=false; idxOpen=false; clearSearch(); render(); window.scrollTo({top:0}); return; }
+    const eb=e.target.closest('[data-errb]'); if(eb){ errB=eb.dataset.errb; store.set('err-b',errB); render(); window.scrollTo({top:0}); return; }
+    const es=e.target.closest('[data-errsort]'); if(es){ errSort=({weak:'new',new:'old',old:'weak'})[errSort]; store.set('err-sort',errSort); render(); return; }
     const sb2=e.target.closest('[data-star]'); if(sb2){ toggleStar(sb2); return; }
     const so=e.target.closest('[data-staronly]'); if(so){ starOnly=!starOnly; store.set('star-only',starOnly?'1':'0'); render(); return; }
     /* practice */
     const pg=e.target.closest('[data-prgo]'); if(pg){
       const v=pg.dataset.prgo;
-      if(!practice||practice.done){ practice=null; if(v.startsWith('day:')){ prSrc='day'; prDay=v.slice(4); } else prSrc=v; store.set('pr-src',prSrc); }
-      sec='practice'; store.set('sec',sec); idxOpen=false; clearSearch(); render(); window.scrollTo({top:0}); return;
+      if(practice&&!practice.done){ pview=true; render(); window.scrollTo({top:0}); return; }   /* one is under way: back to it */
+      if(v.startsWith('day:')){ prSrc='day'; prDay=v.slice(4); } else if(['errors','day','class'].includes(v)) prSrc=v;
+      store.set('pr-src',prSrc); openDlg('practice'); return;
     }
-    const ps=e.target.closest('[data-psrc]'); if(ps){ prSrc=ps.dataset.psrc; store.set('pr-src',prSrc); render(); return; }
-    const pm=e.target.closest('[data-pmode]'); if(pm){ prMode=pm.dataset.pmode; store.set('pr-mode',prMode); render(); return; }
-    const pc=e.target.closest('[data-pcount]'); if(pc){ prCount=pc.dataset.pcount; store.set('pr-count',prCount); render(); return; }
-    if(e.target.closest('[data-pstart]')){ beginFromSetup(); return; }
+    const ps=e.target.closest('[data-psrc]'); if(ps){ prSrc=ps.dataset.psrc; store.set('pr-src',prSrc); refreshDlg(); return; }
+    const pm=e.target.closest('[data-pmode]'); if(pm){ prMode=pm.dataset.pmode; store.set('pr-mode',prMode); refreshDlg(); return; }
+    const pc=e.target.closest('[data-pcount]'); if(pc){ prCount=pc.dataset.pcount; store.set('pr-count',prCount); refreshDlg(); return; }
+    if(e.target.closest('[data-pstart]')){ $('#dlg').close(); beginFromSetup(); return; }
     const qz=e.target.closest('[data-quiz]'); if(qz){ startQuiz(quizzes.find(x=>x.id===qz.dataset.quiz)); return; }
     if(e.target.closest('[data-pskip]')){ answerQ(true); return; }
     const psb=e.target.closest('[data-psubmit]'); if(psb){ submitSheet(psb); return; }
@@ -834,6 +922,8 @@
     if(e.target.closest('[data-pretry]')){ const s=practice; if(s) startPractice(shuffle(uniqMisses(s).map(({w,day})=>({w,day}))),'retry','刚才错的',s.mode); return; }
     const pad=e.target.closest('[data-padd]'); if(pad){ addMissesToBook(pad); return; }
     if(e.target.closest('[data-phome]')){ practice=null; render(); window.scrollTo({top:0}); return; }
+    const rw=e.target.closest('li.row');   /* an error-book line opens and closes on a tap (not on its buttons or a covered block) */
+    if(rw&&!e.target.closest('button,.cover,.det')){ const k=rw.dataset.row; rowOpen.has(k)?rowOpen.delete(k):rowOpen.add(k); render(); return; }
     const c=e.target.closest('.cover'); if(c) uncover(c);
     const u=e.target.closest('[data-unmiss]'); if(u) unmiss(u);
     const dl=e.target.closest('[data-del]'); if(dl) delCapture(dl);
@@ -865,8 +955,8 @@
     else{ t.blur(); const b=$('.sheet-bar .go'); if(b) b.scrollIntoView({block:'end'}); }
   });
   document.addEventListener('change',e=>{
-    if(e.target.id==='pr-day'){ prDay=e.target.value; render(); }
-    else if(e.target.id==='pr-skip'){ prSkip=e.target.checked; store.set('pr-skip',prSkip?'1':'0'); render(); }
+    if(e.target.id==='pr-day'){ prDay=e.target.value; refreshDlg(); }
+    else if(e.target.id==='pr-skip'){ prSkip=e.target.checked; store.set('pr-skip',prSkip?'1':'0'); refreshDlg(); }
   });
   /* back to top: shows after about a screen of scrolling, hides again at the top */
   const toTop=$('#totop'); let topTick=false;
@@ -920,7 +1010,7 @@
     capEditId=id; capCls=x.cls||''; capStar=!!x.star;
     $('#cap-text').value=x.text||''; $('#cap-note').value=x.note||'';
     syncCap(); render();
-    $('#cap').scrollIntoView({block:'start'}); $('#cap-text').focus({preventScroll:true});
+    openCap();
   }
   /* leaving edit mode: back to the class used last for new notes; clear=false keeps what is typed (to save it as a new note) */
   function endEdit(clear){
@@ -928,7 +1018,7 @@
     if(clear){ $('#cap-text').value=''; $('#cap-note').value=''; }
     syncCap();
   }
-  $('#cap-cancel').addEventListener('click',()=>{ endEdit(true); render(); });
+  $('#cap-cancel').addEventListener('click',()=>{ endEdit(true); $('#cap-dlg').close(); render(); });
   $('#cap-cls').addEventListener('click',e=>{ const b=e.target.closest('[data-cls]'); if(!b) return; capCls=capCls===b.dataset.cls?'':b.dataset.cls; if(!capEditId) store.set('cap-cls',capCls); syncCap(); });
   $('#cap-star').addEventListener('click',()=>{ capStar=!capStar; syncCap(); });
   $('#cap').addEventListener('submit',async e=>{
@@ -944,7 +1034,7 @@
       const old=inbox.find(x=>x.id===capEditId);
       if(!old){ endEdit(false); render(); toast('这条刚被 AI 整理成卡片了，改不了；你写的还在框里，点“记下”可以存成新的一条'); return; }
       Store.editNote(capEditId,{...data,at:old.at||data.at,date:old.date||data.date,editedAt:now.getTime()});
-      endEdit(true); inbox=Store.inbox; render(); toast('改好了');
+      endEdit(true); inbox=Store.inbox; $('#cap-dlg').close(); render(); toast('改好了');
     }else{
       Store.addNote(data); inbox=Store.inbox;
       tx.value=''; nt.value=''; capStar=false; syncCap(); render(); toast('记下了'); tx.focus();
@@ -1002,25 +1092,41 @@
         <dt>页面版本</dt><dd>${esc(c.version||'—')}</dd>
       </dl>
       ${s.error?`<p class="note bad-t">${esc(s.error)}</p>`:''}${s.warn?`<p class="note bad-t">${esc(s.warn)}</p>`:''}
-      <div class="pacts">${on?'<button class="go" data-syncnow="1">立即同步</button><button class="ghost" data-reload="1">重新读取数据</button><button class="ghost" data-signout="1">断开这台设备</button>':''}<button class="ghost" data-help="token">令牌怎么拿？</button></div>`;
+      <div class="pacts">${on?'<button class="go" data-syncnow="1">立即同步</button><button class="ghost" data-reload="1">重新读取数据</button><button class="ghost" data-signout="1">断开这台设备</button>':''}<button class="ghost" data-help="token">令牌怎么拿？</button><button class="ghost" data-help="guide">使用说明</button></div>`;
   }
+  /* everything the page used to explain in running text now opens from an ⓘ or the ? in the top bar */
+  const HELP={
+    cards:['单词卡',['点喇叭听发音。一天的发音第一次播放要下载，之后就存在这台设备上。','例句里的每个词都能点，会弹出它在这句里的音标、意思和发音。','卡片下面的“记法”“词族”“搭配”点一下展开；工具栏的“展开详情”一次全部展开。','单词后面的小框是词性。红色的“错过”表示这个词在错词本里。']],
+    cover:['遮住自测',['“遮中文”“遮英文”把一边盖住，点灰色块看答案。','点开一块，这张卡片同一边的内容一起打开。']],
+    class:['课堂',['课间点“记一条”，把听到的词或句子记下来，拼错、只写读音都行。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
+    quiz:['每晚测验',['像一张卷子：看中文写英文，回车跳到下一题，交卷前可以随便改。','中途可以点“先停在这里”，回来接着写。','交卷后才显示对错。等右上角显示“已同步”，再回到 AI 的会话说“考完了”。','判分严格：多一个 s、少一个连字符都算错。']],
+    practice:['拼写练习',['看中文或听发音，把英文拼出来，马上知道对错。','拼对自动进下一题；拼错要照着正确拼写打一遍。','一个词每天最多算一次拼对，拼错就重新数。']],
+    errors:['错词本',['测验里错过的词都在这里。三个点表示连续几天拼对。','连续 3 天拼对会进“可移出”，移不移出由你自己决定。','点一行展开，看错误记录、记法和例句。']],
+    sync:['同步',['你的记录先存在这台设备上，再自动传到 GitHub。没网也能用，回头会补传。','右上角显示“已同步”就是全部传上去了。','每台设备第一次打开要贴一次令牌。']]
+  };
+  const GUIDE=['cards','cover','class','quiz','practice','errors','sync'];
+  const dlgHead=t=>`<div class="dlg-h"><h2 id="dlg-h">${esc(t)}</h2><button type="button" class="clr" data-close="1" aria-label="关闭">×</button></div>`;
   function helpHtml(k){
     const c=Store.config;
-    return `<div class="dlg-h"><h2 id="dlg-h">令牌怎么拿</h2><button type="button" class="clr" data-close="1" aria-label="关闭">×</button></div>
-      <ol class="steps">
+    if(k==='token') return dlgHead('令牌怎么拿')+`<ol class="steps">
         <li>登录 github.com，点右上角头像 → Settings → 最下面的 Developer settings → Personal access tokens → Fine-grained tokens → Generate new token。</li>
         <li>Repository access 选 Only select repositories，只勾 <b>${esc(c.owner+'/'+c.repo)}</b>。</li>
-        <li>Permissions 里找到 Contents，选 Read and write。</li>
+        <li>Permissions 里加上 Contents，改成 Read and write。</li>
         <li>生成后复制 github_pat_ 开头的那一串，贴到页面上的框里。</li>
       </ol>
       <p class="note">令牌只存在这台设备的浏览器里，只能读写这一个仓库。每台设备贴一次。</p>`;
+    const keys=k==='guide'?GUIDE:[HELP[k]?k:'cards'];
+    return dlgHead(keys.length>1?'使用说明':HELP[keys[0]][0])+keys.map(x=>`${keys.length>1?`<h3 class="hh">${esc(HELP[x][0])}</h3>`:''}<ul class="hl">${HELP[x][1].map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`).join('');
   }
-  function openDlg(kind){
-    dlgKind=kind; $('#dlg-in').innerHTML=kind==='settings'?settingsHtml():helpHtml(kind);
+  let dlgArg=null;
+  const dlgHtml=()=>dlgKind==='settings'?settingsHtml():dlgKind==='practice'?practiceSetupHtml():dlgKind==='text'?dlgHead(dlgArg.title)+`<p class="dlg-p">${esc(dlgArg.text)}</p>`:helpHtml(dlgKind);
+  function openDlg(kind,arg){
+    dlgKind=kind; dlgArg=arg||null; $('#dlg-in').innerHTML=dlgHtml(); $('#dlg-voice').hidden=kind!=='settings';
     if(!$('#dlg').open) $('#dlg').showModal();
+    $('#dlg').scrollTop=0;
     if(kind==='settings'&&Store.hasToken()) Store.latestContent().then(x=>{ if(x){ latest=x; refreshDlg(); } });
   }
-  function refreshDlg(){ if($('#dlg').open&&dlgKind==='settings') $('#dlg-in').innerHTML=settingsHtml(); }
+  function refreshDlg(){ if($('#dlg').open&&(dlgKind==='settings'||dlgKind==='practice')) $('#dlg-in').innerHTML=dlgHtml(); }
   function signOut(btn){
     if(!btn.classList.contains('confirm')){
       const n=Store.status.pending;
@@ -1040,7 +1146,7 @@
     if(type==='status'){
       syncBadge(); refreshDlg();
       if(!Store.ready){ if(!($('#tok')&&['setup','auth'].includes(Store.status.state))) render(); }
-      else if((practice&&practice.done)||(sec==='practice'&&!practice&&!q.trim())) render();   /* the "已同步" lines */
+      else if((pview&&practice&&practice.done)||(sec==='today'&&!pview&&!q.trim())) render();   /* the "已同步" lines */
       return;
     }
     pull();

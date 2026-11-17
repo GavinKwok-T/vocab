@@ -7,59 +7,69 @@
 <title>雅思词汇本</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans:wght@400&display=swap">
-<link rel="stylesheet" href="app.css?v=3d68ba5">
+<link rel="stylesheet" href="app.css?v=d4bfd39">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="hrow"><h1>雅思词汇本</h1><button class="sync" id="sync-btn" type="button" data-k="off" aria-label="同步和设置"><span class="dot" aria-hidden="true"></span><span id="sync-txt">未连接</span></button></div>
-    <p>点 <b>喇叭</b> 听发音，点例句里的词看音标和意思</p>
-  </header>
-
-  <div class="search" role="search">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
-    <input id="q" type="search" placeholder="搜单词或中文意思" aria-label="搜索单词" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
-    <button class="clr" id="q-clear" type="button" aria-label="清除搜索" hidden>×</button>
-  </div>
-
-  <nav class="tabs" id="tabs" role="tablist" aria-label="栏目"></nav>
-
-  <div class="stick-mark" id="stick-mark"></div>
-  <div class="tools" id="tools">
-    <div class="seg" role="group" aria-label="自测模式">
-      <button id="m-all" aria-pressed="true" aria-label="全部显示">全部</button>
-      <button id="m-zh" aria-pressed="false" aria-label="遮住中文">遮中文</button>
-      <button id="m-en" aria-pressed="false" aria-label="遮住英文">遮英文</button>
+<div class="app">
+  <aside class="side" aria-label="导航">
+    <div class="brand">雅思词汇本</div>
+    <nav class="nav" id="tabs" role="tablist" aria-label="栏目"></nav>
+  </aside>
+  <div class="main-col">
+    <header class="top">
+      <h1 id="title">雅思词汇本</h1>
+      <div class="top-acts">
+        <button class="ib" id="q-open" type="button" aria-label="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg></button>
+        <button class="ib" type="button" data-help="guide" aria-label="使用说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.4c-.8.4-1.2 1-1.2 1.8"/><path d="M12 17h.01"/></svg></button>
+        <button class="sync" id="sync-btn" type="button" data-k="off" aria-label="同步和设置"><span class="dot" aria-hidden="true"></span><span id="sync-txt">未连接</span></button>
+      </div>
+    </header>
+    <div class="search" id="search" role="search" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+      <input id="q" type="search" placeholder="搜单词或中文意思" aria-label="搜索单词" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+      <button class="clr" id="q-clear" type="button" aria-label="关闭搜索">×</button>
     </div>
-    <div class="seg" role="group" aria-label="发音">
-      <button id="v-us" aria-pressed="true">美音</button>
-      <button id="v-gb" aria-pressed="false">英音</button>
-      <button id="r-slow" aria-pressed="false">慢速</button>
+    <div class="stick-mark" id="stick-mark"></div>
+    <div class="tools" id="tools" hidden>
+      <div class="seg" role="group" aria-label="遮住自测">
+        <button id="m-all" aria-pressed="true" aria-label="全部显示">全部</button>
+        <button id="m-zh" aria-pressed="false" aria-label="遮住中文">遮中文</button>
+        <button id="m-en" aria-pressed="false" aria-label="遮住英文">遮英文</button>
+      </div>
+      <button class="pill" id="d-toggle" type="button" aria-pressed="false">展开详情</button>
+    </div>
+    <main id="view"><div class="empty"><strong>正在打开</strong>稍等一下。</div></main>
+  </div>
+  <nav class="tabbar" id="tabbar" aria-label="栏目"></nav>
+</div>
+<div class="pop" id="pop" role="dialog" aria-label="单词释义" hidden></div>
+<button class="totop" id="totop" type="button" aria-label="回到顶部" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
+<dialog class="dlg" id="dlg" aria-labelledby="dlg-h">
+  <div class="dlg-in" id="dlg-in"></div>
+  <div class="dlg-in dlg-voice" id="dlg-voice" hidden>
+    <div class="prow"><span class="plab">发音</span>
+      <div class="seg" role="group" aria-label="发音">
+        <button id="v-us" aria-pressed="true">美音</button>
+        <button id="v-gb" aria-pressed="false">英音</button>
+        <button id="r-slow" aria-pressed="false">慢速</button>
+      </div>
     </div>
   </div>
-
-  <section class="capwrap" id="cap-wrap" hidden>
-    <div class="day-head"><h2>课堂</h2><span>课上听到的新词和好句子，课间随手记一下，拼错、只写读音都行；晚上 AI 整理成能听发音的卡片</span></div>
+</dialog>
+<dialog class="dlg" id="cap-dlg" aria-labelledby="cap-h">
+  <div class="dlg-in">
+    <div class="dlg-h"><h2 id="cap-h">记一条</h2><button type="button" class="clr" data-close="1" aria-label="关闭">×</button></div>
     <form class="cap" id="cap" autocomplete="off">
-      <div class="cap-editing" id="cap-editing" role="status" hidden><span>正在修改下面标出的那条笔记</span><button type="button" class="pill" id="cap-cancel">取消修改</button></div>
+      <div class="cap-editing" id="cap-editing" role="status" hidden><span>正在修改这条笔记</span><button type="button" class="pill" id="cap-cancel">取消修改</button></div>
       <input id="cap-text" maxlength="200" placeholder="听到的词或句子" aria-label="听到的词或句子" autocapitalize="off" spellcheck="false" enterkeyhint="done">
       <input id="cap-note" maxlength="300" placeholder="备注（可选）：老师的解释、用法" aria-label="备注" enterkeyhint="done">
       <div class="row" role="group" aria-label="哪节课" id="cap-cls"></div>
-      <div class="row"><button type="button" class="pill star" id="cap-star" aria-pressed="false">★ 想用</button><span class="note">以后想用在口语、写作里的</span><button type="submit" class="go" id="cap-go">记下</button></div>
+      <div class="row"><button type="button" class="pill star" id="cap-star" aria-pressed="false">★ 想用</button><button type="submit" class="go" id="cap-go">记下</button></div>
     </form>
-  </section>
-
-  <main id="view">
-    <div class="empty"><strong>单词正在加载</strong>AI 每天添加的新词会出现在这里，按天分组，错词单独放在“错词本”。</div>
-  </main>
-
-  <p class="note">美音（Andrew）和英音（Sonia）都是用微软 Azure 神经语音提前生成的自然发音；还没生成好的词用设备自带的朗读。每台设备听到的都一样；一天的发音第一次播放时要下载，之后就存在这台设备上。单词后面的小框是词性（n. 名词、v. 动词、adj. 形容词、adv. 副词、prep. 介词），按这张卡片里的意思标；一个词两种用法都常见时会标两个。带"易拼错"标签的词，拼写里有双写、不发音的字母或英美差异，下面的小字是记法。遮住模式下，点灰色块可以看答案：遮英文时，单词、音标、例句和下面的小字说明一起遮住；遮中文时，中文意思、例句翻译和小字说明一起遮住；点开一块，这张卡片的同类内容一起打开。例句里的每个词都可以点（或选中），会弹出它在这句里的音标、意思和发音。「课堂」页的收集箱用来随手记课上听到的词和句子，晚上 AI 整理好后会从收集箱移到下面的卡片里。卡片右边的"☆ 想用"点一下就标上，再点一下取消；标了的会进下一次测验，"只看想用"可以只看这些词。每晚的测验也在「练习」页最上面："今晚测验"的题是 AI 出的，还会自动加上你标了"想用"、之前没考过的课堂词；一题一题答，中途可以停下、回来接着做，答完回到 AI 的会话说"考完了"。「练习」页也可以自己练拼写：看中文写英文，或者听发音写英文，提交后马上告诉你对错，拼错的字母会标出来。练习和每晚测验的结果都记进进度：一个词每天最多算一次拼对，拼错就重新数；错词本里的词连续 3 天拼对，卡片上会提示可以移出，移不移由你自己决定。每日单词和课堂卡片上的红色"错过"表示这个词在错词本里。</p>
-</div>
-<div class="pop" id="pop" role="dialog" aria-label="单词释义" hidden></div>
-<dialog class="dlg" id="dlg" aria-labelledby="dlg-h"><div class="dlg-in" id="dlg-in"></div></dialog>
-<button class="totop" id="totop" type="button" aria-label="回到顶部" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
-<script src="config.js?v=3d68ba5"></script>
-<script src="store.js?v=3d68ba5"></script>
-<script src="app.js?v=3d68ba5"></script>
+  </div>
+</dialog>
+<script src="config.js?v=d4bfd39"></script>
+<script src="store.js?v=d4bfd39"></script>
+<script src="app.js?v=d4bfd39"></script>
 </body>
 </html>
