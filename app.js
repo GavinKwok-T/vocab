@@ -471,6 +471,9 @@
   const practicable=w=>!!(w&&w.w&&!/,/.test(w.w)&&/[a-z]/i.test(w.w));
   const errSetNow=()=>new Set((errors&&errors.words||[]).map(w=>String(w.w).toLowerCase()));
   const streakOf=w=>((progress[String(w.w).toLowerCase()]||{}).streak|0);
+  /* how many times a word has come up in practice and quizzes (right + wrong), and the last day it did */
+  const timesOf=w=>{ const p=progress[String(w.w).toLowerCase()]||{}; return (p.right|0)+(p.wrong|0); };
+  const lastDayOf=w=>String((progress[String(w.w).toLowerCase()]||{}).last||'');
   function errorsPool(skipDone){ return (errors&&errors.words||[]).filter(practicable).filter(w=>!skipDone||streakOf(w)<3).map(w=>({w,day:w.day||''})); }
   function curDayId(){ return (days.find(x=>x.id===prDay)||days[days.length-1]||{}).id||''; }
   function dayPool(id){ const d=days.find(x=>x.id===id); return d?(d.groups||[]).flatMap(g=>(g.words||[]).filter(practicable).map(w=>({w,day:d.id}))):[]; }
@@ -504,7 +507,9 @@
   }
   function beginFromSetup(){
     const pool=shuffle(poolFor(prSrc).slice());
-    if(prSrc==='errors') pool.sort((a,b)=>streakOf(a.w)-streakOf(b.w));   /* weakest first; ties stay shuffled */
+    /* error book: the words take turns (user's request, 11/19). Fewest times practised first, then the one that came up
+       longest ago, so the same words don't come back day after day; ties stay shuffled */
+    if(prSrc==='errors') pool.sort((a,b)=>timesOf(a.w)-timesOf(b.w)||lastDayOf(a.w).localeCompare(lastDayOf(b.w)));
     const n=prCount==='all'?pool.length:Math.min(+prCount,pool.length);
     startPractice(pool.slice(0,n),prSrc,prLabel(prSrc));
   }
@@ -1105,7 +1110,7 @@
     class:['课堂',['课间点“记一条”，把听到的词或句子记下来，拼错、只写读音都行。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
     quiz:['每晚测验',['像一张卷子：看中文写英文，回车跳到下一题，交卷前可以随便改。','中途可以点“先停在这里”，回来接着写。','交卷后才显示对错。等右上角显示“已同步”，再回到 AI 的会话说“考完了”。','判分严格：多一个 s、少一个连字符都算错。']],
     practice:['拼写练习',['看中文或听发音，把英文拼出来，马上知道对错。','拼对自动进下一题；拼错要照着正确拼写打一遍。','一个词每天最多算一次拼对，拼错就重新数。']],
-    errors:['错词本',['测验里错过的词都在这里。三个点表示连续几天拼对。','连续 3 天拼对会进“可移出”，移不移出由你自己决定。','点一行展开，看错误记录、记法和例句。']],
+    errors:['错词本',['测验里错过的词都在这里。三个点表示连续几天拼对。','连续 3 天拼对会进“可移出”，移不移出由你自己决定。','点“练错词本”时轮流出题：练过次数少的先出，刚练过的排到后面，同一批词不会天天出现。','点一行展开，看错误记录、记法和例句。']],
     sync:['同步',['你的记录先存在这台设备上，再自动传到 GitHub。没网也能用，回头会补传。','右上角显示“已同步”就是全部传上去了。','每台设备第一次打开要贴一次令牌。']]
   };
   const GUIDE=['cards','cover','class','quiz','practice','errors','sync'];

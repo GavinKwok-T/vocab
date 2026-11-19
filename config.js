@@ -7,5 +7,5 @@ window.VOCAB_CONFIG={
     "name": "词汇本页面",
     "email": "312431914+GavinKwok-T@users.noreply.github.com"
   },
-  "version": "2026-11-17.e9bfffe"
+  "version": "2026-11-19.993629b"
 };
