@@ -72,7 +72,7 @@
   }
 
   /* ── which files the page reads ── */
-  const DATA=[/^data\/days\/day-\d+\.json$/,/^data\/class\/\d{4}-\d{2}-\d{2}\.json$/,/^data\/gloss\/g\d+\.json$/,/^data\/quiz\/[\w-]+\.json$/,/^data\/errors\.json$/,/^data\/inbox-done\.json$/];
+  const DATA=[/^data\/days\/day-\d+\.json$/,/^data\/class\/\d{4}-\d{2}-\d{2}\.json$/,/^data\/phrases\/ph-\d+\.json$/,/^data\/gloss\/g\d+\.json$/,/^data\/quiz\/[\w-]+\.json$/,/^data\/errors\.json$/,/^data\/inbox-done\.json$/];
   const isData=p=>DATA.some(r=>r.test(p));
   const isPractice=p=>/^state\/practice\/\d{4}-\d{2}-\d{2}\.json$/.test(p);
   const isState=p=>/^state\/(progress|stars|inbox|error-ops)\.json$/.test(p)||/^state\/quiz\/q-[\w-]+\.json$/.test(p);
@@ -92,7 +92,7 @@
     pendingEv.add(type);
   }
 
-  const Store={ready:false,days:[],classes:[],gloss:new Map(),quizzes:[],quizHistory:[],errors:{words:[]},progress:{},inbox:[],practiceLog:[],
+  const Store={ready:false,days:[],classes:[],phrases:[],gloss:new Map(),quizzes:[],quizHistory:[],errors:{words:[]},progress:{},inbox:[],practiceLog:[],
     /* state: setup (no token) | loading | ready | auth (token refused) | error */
     status:{state:token?'loading':'setup',done:0,total:0,pending:0,syncing:false,offline:false,error:'',lastSync:0,dirtySince:0,warn:''},
     config:CFG};
@@ -119,10 +119,12 @@
   function rebuild(){
     const F=p=>files[p]&&files[p].data;
     const ov=(F('state/stars.json')||{}).stars||{};
-    const days=[],classes=[],quizzes=[],gloss=new Map();
+    const days=[],classes=[],quizzes=[],phrases=[],gloss=new Map();
     Object.keys(content).sort().forEach(p=>{
       const j=content[p].json||{}; let m;
       if((m=/^data\/days\/(day-\d+)\.json$/.exec(p))) days.push(Object.assign({},j,{id:m[1]}));
+      /* 短语: sets of common phrases (ph-NN), grouped by level; no quiz, no stars */
+      else if((m=/^data\/phrases\/(ph-\d+)\.json$/.exec(p))) phrases.push(Object.assign({},j,{id:m[1]}));
       else if((m=/^data\/class\/(\d{4}-\d{2}-\d{2})\.json$/.exec(p))){
         /* 想用 stars: the card's own star (set by the AI) unless this device or another one changed it since */
         const id='c-'+m[1];
@@ -135,7 +137,8 @@
     });
     days.sort((a,b)=>num(a.day)-num(b.day));
     classes.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    Store.days=days; Store.classes=classes; Store.gloss=gloss; Store.quizzes=quizzes;
+    phrases.sort((a,b)=>num(a.level)-num(b.level)||num(a.set)-num(b.set));
+    Store.days=days; Store.classes=classes; Store.gloss=gloss; Store.quizzes=quizzes; Store.phrases=phrases;
     Store.quizHistory=((content['data/quiz/history.json']||{}).json||{}).words||[];
     /* error book = the AI's file, plus what was added or removed here since the AI last folded those changes in */
     const base=(content['data/errors.json']||{}).json||{words:[]}, folded=foldedSet();

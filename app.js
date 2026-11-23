@@ -4,6 +4,8 @@
   let days=[], errors=null, mode='all', daysLoaded=false;
   /* 课堂: class/c-YYYY-MM-DD docs are organized notes shaped like a day (groups + audio packs); inbox/* are raw captures */
   let classes=[], inbox=[], capEditId=null;   /* capEditId: the inbox note being changed in the capture form */
+  /* 短语: sets of common phrases (data/phrases/ph-NN, shaped like a day); phId is the set being read, kept on this device */
+  let phrases=[], phId=store.get('ph-id')||'';
   /* where the reader is: a section (days | class | errors, remembered), the open day and class date (default: the newest),
      the 目录 panel, the search text, the error-book filter */
   let sec='today', pview=false, dayId='', cDate='', idxOpen=false, q='', errB=store.get('err-b')||'todo';   /* pview: a practice or the quiz is on screen */
@@ -41,8 +43,9 @@
   let player=null;
   /* natural audio: packs {clips:{key: base64 AAC}}, one per day and accent, found by their place in the repository:
      audio/day-NN.json = British (en-GB), audio/day-NN-us.json = American (en-US); class days are under audio/class/,
-     the sentence dictionary under audio/gloss/. The store fetches a pack on first use and keeps it on this device */
-  const packPath=(id,lang)=>'audio/'+(String(id).startsWith('c-')?'class/'+String(id).slice(2):id)+((lang||accent)==='en-US'?'-us':'')+'.json';
+     phrase sets under audio/phrases/, the sentence dictionary under audio/gloss/. The store fetches a pack on first use
+     and keeps it on this device */
+  const packPath=(id,lang)=>{ const s=String(id); return 'audio/'+(s.startsWith('c-')?'class/'+s.slice(2):s.startsWith('ph-')?'phrases/'+s:s)+((lang||accent)==='en-US'?'-us':'')+'.json'; };
   function loadPack(dayId,lang){ return dayId?Store.audio(packPath(dayId,lang)):Promise.resolve(null); }
   /* sentence-word dictionary: gloss/gNN docs {words:{key:{zh,ipaUk,ipaUs,force?,form?,day?,clip?,noAudio?}}, audio, audioUs};
      entries with day/clip reuse that day's word audio, the rest live in the doc's own packs */
@@ -107,6 +110,7 @@
     if(q.trim()) return;
     if(sec==='errors') return;   /* the error book spans many days: a day's pack loads on the first tap */
     if(sec==='class'){ const c=classes.find(x=>x.id===cDate)||classes[0]; if(c) loadPack(c.id); }
+    else if(sec==='phrases'){ const p=phrases.find(x=>x.id===phId)||phrases[0]; if(p) loadPack(p.id); }
     else { const d=days.find(x=>x.id===dayId)||days[days.length-1]; if(d) loadPack(d.id); }
   }
   $('#v-gb').addEventListener('click',()=>{accent='en-GB';store.set('accent-v2',accent);syncVoiceBtns();preload();});
@@ -137,11 +141,13 @@
     ok:svg('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/>'),
     todo:svg('<circle cx="12" cy="12" r="9"/>'),
     sort:svg('<path d="M7 4v16"/><path d="m3.5 7.5 3.5-3.5 3.5 3.5"/><path d="M17 20V4"/><path d="m13.5 16.5 3.5 3.5 3.5-3.5"/>'),
-    bulb:svg('<path d="M9 18h6"/><path d="M10 21h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.6.5-1 1.2-1 2V17h-5v-.5c0-.8-.4-1.5-1-2z"/>')
+    bulb:svg('<path d="M9 18h6"/><path d="M10 21h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.6.5-1 1.2-1 2V17h-5v-.5c0-.8-.4-1.5-1-2z"/>'),
+    talk:svg('<path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M8 9.2h8"/><path d="M8 12.4h5"/>')
   };
-  /* four places: 今天 (what to do, how it is going), 单词, 课堂, 错词本. The same buttons fill the side bar (wide screens)
-     and the bottom tab bar (phones). Practice and the quiz are not a place: they take over the screen (pview) */
-  const NAV=[['today','今天',I.home],['days','单词',I.book],['class','课堂',I.note],['errors','错词本',I.mark]];
+  /* five places: 今天 (what to do, how it is going), 单词, 课堂, 错词本, 短语 (last, so the first four keep their places on a
+     phone). The same buttons fill the side bar (wide screens) and the bottom tab bar (phones). Practice and the quiz are
+     not a place: they take over the screen (pview) */
+  const NAV=[['today','今天',I.home],['days','单词',I.book],['class','课堂',I.note],['errors','错词本',I.mark],['phrases','短语',I.talk]];
   const todayStr=()=>localDate(new Date());
   function navHtml(){
     const searching=!!q.trim(), oq=openQuiz();
@@ -157,7 +163,7 @@
     return null;
   }
   /* part of speech: words carry pos ("n", "v/n", "vphr", …); error-book entries borrow it from their day or class card */
-  const POS={n:'n. 名词',v:'v. 动词',adj:'adj. 形容词',adv:'adv. 副词',prep:'prep. 介词',conj:'conj. 连词',vphr:'动词短语',phr:'短语'};
+  const POS={n:'n. 名词',v:'v. 动词',adj:'adj. 形容词',adv:'adv. 副词',prep:'prep. 介词',conj:'conj. 连词',vphr:'动词短语',phr:'短语',idiom:'习语'};
   function posOf(w){
     if(w.pos) return w.pos;
     for(const d of days.concat(classes)) for(const g of d.groups||[]) for(const x of g.words||[]) if(x.w===w.w&&x.pos) return x.pos;
@@ -308,11 +314,11 @@
   const starCount=x=>(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>w.star).length,0);
   const missCount=x=>missSet?(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>missSet.has(w.w.toLowerCase())).length,0):0;
   function pager(kind,title,older,newer){
-    const day=kind==='day';
+    const lab=kind==='day'?['前一天','后一天']:kind==='ph'?['上一组','下一组']:['更早一次','更近一次'];
     return `<div class="pager">
-      <button class="pg" data-go="${kind}:${esc(older||'')}"${older?'':' disabled'} aria-label="${day?'前一天':'更早一次'}">‹</button>
+      <button class="pg" data-go="${kind}:${esc(older||'')}"${older?'':' disabled'} aria-label="${lab[0]}">‹</button>
       <button class="pg-title" data-idx="1" aria-expanded="${idxOpen}"><span class="t">${title}</span><span class="pg-more">${idxOpen?'收起':'目录'}</span></button>
-      <button class="pg" data-go="${kind}:${esc(newer||'')}"${newer?'':' disabled'} aria-label="${day?'后一天':'更近一次'}">›</button>
+      <button class="pg" data-go="${kind}:${esc(newer||'')}"${newer?'':' disabled'} aria-label="${lab[1]}">›</button>
     </div>`;
   }
   function idxHtml(groups,row){
@@ -357,6 +363,18 @@
       ?'<div class="empty"><strong>这一天还没有标“想用”的词</strong>点卡片右边的“☆ 想用”就能标上。</div>'
       :groupsHtml(c,c.id,{star:true,only:starOnly});
     view.innerHTML=add+pend+twoPane(index,head+meta+body);
+  }
+
+  /* 短语: one set at a time with ‹ › and a 目录 grouped by level, like 单词. Not in the quiz: read, listen, cover and check */
+  function renderPhrases(view){
+    if(!phrases.length){ view.innerHTML='<div class="empty"><strong>还没有短语</strong>整理好的短语会出现在这里。</div>'; return; }
+    let i=phrases.findIndex(x=>x.id===phId); if(i<0) i=0;
+    const p=phrases[i]; loadPack(p.id);
+    const head=pager('ph',`${esc(p.set)} · ${esc(p.topic||'')}`,phrases[i-1]&&phrases[i-1].id,phrases[i+1]&&phrases[i+1].id);
+    const levels=[]; phrases.forEach(x=>{ const k=x.levelName||'短语'; let g=levels[levels.length-1]; if(!g||g.k!==k) levels.push(g={k,items:[]}); g.items.push(x); });
+    const index=idxHtml(levels,x=>`<li><button class="idx-row" data-go="ph:${esc(x.id)}" aria-current="${x.id===p.id}"><span class="idx-k">第 ${esc(x.set)} 组</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m">${countOf(x)} 个</span></button></li>`);
+    const meta=`<div class="meta-row"><p class="meta">${p.levelName?esc(p.levelName)+' · ':''}${countOf(p)} 个 · 不进测验</p><button type="button" class="ib sm" data-help="phrases" aria-label="短语怎么学">${I.info}</button></div>`;
+    view.innerHTML=twoPane(index,head+meta+groupsHtml(p,p.id));
   }
 
   /* 今天: what is waiting (tonight's quiz, the newest day, the error book, class notes) and how it is going
@@ -449,13 +467,14 @@
     const hits=[];
     days.forEach(d=>(d.groups||[]).forEach(g=>(g.words||[]).forEach(w=>{ const r=rank(w); if(r>=0) hits.push({w,r,id:d.id,label:`Day ${d.day} · ${g.name}`,go:'day:'+d.id}); })));
     classes.forEach(c=>(c.groups||[]).forEach((g,gi)=>(g.words||[]).forEach((w,wi)=>{ const r=rank(w); if(r>=0) hits.push({w,r,id:c.id,label:`课堂 ${shortDate(c.date)} · ${g.name}`,go:'cls:'+c.id,star:{doc:c.id,gi,wi}}); })));
+    phrases.forEach(p=>(p.groups||[]).forEach(g=>(g.words||[]).forEach(w=>{ const r=rank(w); if(r>=0) hits.push({w,r,id:p.id,label:`短语 第 ${p.set} 组 · ${g.name}`,go:'ph:'+p.id}); })));
     (errors&&errors.words||[]).forEach(w=>{ if(w.day) return; const r=rank(w); if(r>=0) hits.push({w,r,id:'',label:'错词本 · 作文和自己加的',go:'sec:errors'}); });
     hits.sort((a,b)=>a.r-b.r);
     const list=hits.slice(0,50);
     const src=h=>`<span class="src"><button class="src-go" data-go="${esc(h.go)}">${esc(h.label)} ›</button>${errSet.has(h.w.w.toLowerCase())?'<span class="chip bad">在错词本里</span>':''}</span>`;
     view.innerHTML=hits.length
       ?`<div class="day-head"><h2>搜索结果</h2><span>“${esc(raw)}”找到 ${hits.length} 条${hits.length>list.length?'，先显示前 '+list.length+' 条':''}</span></div><section class="wg"><ol class="cards">${list.map((h,i)=>wordLi(h.w,i+1,src(h),h.id,h.star)).join('')}</ol></section>`
-      :`<div class="empty"><strong>没有找到“${esc(raw)}”</strong>换个拼法试试，或者搜中文意思。每日单词、课堂词句和错词本都在搜索范围里。</div>`;
+      :`<div class="empty"><strong>没有找到“${esc(raw)}”</strong>换个拼法试试，或者搜中文意思。每日单词、课堂词句、错词本和短语都在搜索范围里。</div>`;
   }
 
   /* ───── 练习: spelling practice ─────
@@ -842,7 +861,7 @@
     view.innerHTML=s.done?practiceSummary(s):s.sheet?quizSheet(s):practiceCard(s);
   }
 
-  const TITLES={today:'今天',days:'单词',class:'课堂',errors:'错词本'};
+  const TITLES={today:'今天',days:'单词',class:'课堂',errors:'错词本',phrases:'短语'};
   function render(){
     if(!practice) pview=false;
     navHtml(); hidePop(); cards=[];
@@ -864,6 +883,7 @@
     else if(sec==='today') renderToday(view);
     else if(sec==='class') renderClass(view);
     else if(sec==='errors') renderErrors(view);
+    else if(sec==='phrases') renderPhrases(view);
     else renderDays(view);
     const pb=$('#pans');   /* same question, same step only: a miss must not carry the wrong spelling into the copy box */
     if(keep&&pb&&!pb.readOnly&&pb.dataset.k===keep.k){ pb.value=keep.v; if(keep.f){ pb.focus({preventScroll:true}); try{ pb.setSelectionRange(keep.s,keep.e); }catch(e){} } }
@@ -872,7 +892,7 @@
   }
   function openRef(ref){
     const at=ref.indexOf(':'), k=ref.slice(0,at), v=ref.slice(at+1); if(!v) return;
-    if(k==='day'){ sec='days'; dayId=v; } else if(k==='cls'){ sec='class'; cDate=v; } else if(k==='sec'){ sec=v; }
+    if(k==='day'){ sec='days'; dayId=v; } else if(k==='cls'){ sec='class'; cDate=v; } else if(k==='ph'){ sec='phrases'; phId=v; store.set('ph-id',v); } else if(k==='sec'){ sec=v; }
     pview=false; idxOpen=false; clearSearch(); render(); window.scrollTo({top:0});
   }
   function clearSearch(){ $('#search').hidden=true; if(!q) return; q=''; $('#q').value=''; }
@@ -1108,12 +1128,13 @@
     cards:['单词卡',['点喇叭听发音。一天的发音第一次播放要下载，之后就存在这台设备上。','例句里的每个词都能点，会弹出它在这句里的音标、意思和发音。','卡片下面的“记法”“词族”“搭配”点一下展开；工具栏的“展开详情”一次全部展开。','单词后面的小框是词性。红色的“错过”表示这个词在错词本里。']],
     cover:['遮住自测',['“遮中文”“遮英文”把一边盖住，点灰色块看答案。','点开一块，这张卡片同一边的内容一起打开。']],
     class:['课堂',['课间点“记一条”，把听到的词或句子记下来，拼错、只写读音都行。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
+    phrases:['短语',['这里是常用短语：每个词都认识，连在一起意思却猜不出来。现在是第一级，全由简单词组成；学得差不多了再加第二级。','短语不进每晚测验，有空就翻一组。','学法：点上面的“遮中文”，先看英文、点喇叭听，说出意思，再点灰块核对。','卡片下面的“记法”写着什么时候用、容易和什么弄混。']],
     quiz:['每晚测验',['像一张卷子：看中文写英文，回车跳到下一题，交卷前可以随便改。','中途可以点“先停在这里”，回来接着写。','交卷后才显示对错。等右上角显示“已同步”，再回到 AI 的会话说“考完了”。','判分严格：多一个 s、少一个连字符都算错。']],
     practice:['拼写练习',['看中文或听发音，把英文拼出来，马上知道对错。','拼对自动进下一题；拼错要照着正确拼写打一遍。','一个词每天最多算一次拼对，拼错就重新数。']],
     errors:['错词本',['测验里错过的词都在这里。三个点表示连续几天拼对。','连续 3 天拼对会进“可移出”，移不移出由你自己决定。','点“练错词本”时轮流出题：练过次数少的先出，刚练过的排到后面，同一批词不会天天出现。','点一行展开，看错误记录、记法和例句。']],
     sync:['同步',['你的记录先存在这台设备上，再自动传到 GitHub。没网也能用，回头会补传。','右上角显示“已同步”就是全部传上去了。','每台设备第一次打开要贴一次令牌。']]
   };
-  const GUIDE=['cards','cover','class','quiz','practice','errors','sync'];
+  const GUIDE=['cards','cover','class','phrases','quiz','practice','errors','sync'];
   const dlgHead=t=>`<div class="dlg-h"><h2 id="dlg-h">${esc(t)}</h2><button type="button" class="clr" data-close="1" aria-label="关闭">×</button></div>`;
   function helpHtml(k){
     const c=Store.config;
@@ -1148,7 +1169,7 @@
 
   /* data: everything comes from the store (store.js), which reads the private repository and keeps a copy on this device */
   function pull(){
-    days=Store.days; classes=Store.classes; errors=Store.errors; progress=Store.progress; quizzes=Store.quizzes;
+    days=Store.days; classes=Store.classes; phrases=Store.phrases||[]; errors=Store.errors; progress=Store.progress; quizzes=Store.quizzes;
     quizHistory=Store.quizHistory; practiceLog=Store.practiceLog; inbox=Store.inbox; gloss=Store.gloss; daysLoaded=Store.ready;
   }
   Store.on(type=>{
