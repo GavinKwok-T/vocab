@@ -7,13 +7,14 @@
 <title>雅思词汇本</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans:wght@400&display=swap">
-<link rel="stylesheet" href="app.css?v=e01e4e6">
+<link rel="stylesheet" href="app.css?v=a77b144">
 </head>
 <body>
 <div class="app">
   <aside class="side" aria-label="导航">
     <div class="brand">雅思词汇本</div>
     <nav class="nav" id="tabs" role="tablist" aria-label="栏目"></nav>
+    <button class="navb navcap" type="button" data-capopen="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span class="nl">记一条</span></button>
   </aside>
   <div class="main-col">
     <header class="top">
@@ -64,13 +65,18 @@
       <div class="cap-editing" id="cap-editing" role="status" hidden><span>正在修改这条笔记</span><button type="button" class="pill" id="cap-cancel">取消修改</button></div>
       <input id="cap-text" maxlength="200" placeholder="听到的词或句子" aria-label="听到的词或句子" autocapitalize="off" spellcheck="false" enterkeyhint="done">
       <input id="cap-note" maxlength="300" placeholder="备注（可选）：老师的解释、用法" aria-label="备注" enterkeyhint="done">
+      <div class="cap-ph" id="cap-ph">
+        <label class="pill" id="cap-pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>拍照或选照片<input type="file" id="cap-file" class="vh" accept="image/*" multiple></label>
+        <span class="note" id="cap-ph-n" role="status"></span>
+      </div>
+      <ol class="thumbs" id="cap-thumbs" hidden></ol>
       <div class="row" role="group" aria-label="哪节课" id="cap-cls"></div>
       <div class="row"><button type="button" class="pill star" id="cap-star" aria-pressed="false">★ 想用</button><button type="submit" class="go" id="cap-go">记下</button></div>
     </form>
   </div>
 </dialog>
-<script src="config.js?v=e01e4e6"></script>
-<script src="store.js?v=e01e4e6"></script>
-<script src="app.js?v=e01e4e6"></script>
+<script src="config.js?v=a77b144"></script>
+<script src="store.js?v=a77b144"></script>
+<script src="app.js?v=a77b144"></script>
 </body>
 </html>

@@ -4,7 +4,9 @@
    token that is kept on this device only:
 
      data/**    written by the AI, read-only here    days, class cards, sentence dictionary, quizzes, error book
-     state/**   written here, read-only for the AI   progress, quiz answers, practice logs, inbox, stars, error-book ops
+     state/**   written here, read-only for the AI   progress, quiz answers, practice logs, inbox, stars, error-book ops,
+                                                  which phrase sets have been studied, photos taken with 记一条
+                                                  (state/photos/YYYY-MM-DD/<note id>-<n>.jpg)
      audio/**   audio packs, fetched on first use and kept on this device
 
    Each side owns its own files, so the page and the AI never edit the same file and there is nothing to merge between
@@ -54,14 +56,14 @@
   /* ── GitHub ── */
   async function gh(path,o){
     o=o||{};
-    const h={Accept:o.raw?'application/vnd.github.raw+json':'application/vnd.github+json'};
+    const h={Accept:o.raw||o.bin?'application/vnd.github.raw+json':'application/vnd.github+json'};
     if(token) h.Authorization='Bearer '+token;
     if(o.body) h['Content-Type']='application/json';
     let r;
     try{ r=await fetch(CFG.api+path,{method:o.method||'GET',headers:h,body:o.body?JSON.stringify(o.body):undefined,cache:'no-store'}); }
     catch(e){ const err=new Error('offline'); err.offline=true; throw err; }
     if(!r.ok){ const err=new Error('GitHub '+r.status); err.status=r.status; try{ err.detail=String((await r.json()).message||''); }catch(e){} throw err; }
-    return o.raw?r.text():r.json();
+    return o.bin?r.arrayBuffer():o.raw?r.text():r.json();
   }
   function b64(str){ const b=new TextEncoder().encode(str); let s=''; for(let i=0;i<b.length;i+=0x8000) s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000)); return btoa(s); }
   function unb64(s){ const bin=atob(String(s||'').replace(/\s/g,'')), b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return new TextDecoder().decode(b); }
@@ -75,7 +77,7 @@
   const DATA=[/^data\/days\/day-\d+\.json$/,/^data\/class\/\d{4}-\d{2}-\d{2}\.json$/,/^data\/phrases\/ph-\d+\.json$/,/^data\/gloss\/g\d+\.json$/,/^data\/quiz\/[\w-]+\.json$/,/^data\/errors\.json$/,/^data\/inbox-done\.json$/];
   const isData=p=>DATA.some(r=>r.test(p));
   const isPractice=p=>/^state\/practice\/\d{4}-\d{2}-\d{2}\.json$/.test(p);
-  const isState=p=>/^state\/(progress|stars|inbox|error-ops)\.json$/.test(p)||/^state\/quiz\/q-[\w-]+\.json$/.test(p);
+  const isState=p=>/^state\/(progress|stars|inbox|error-ops|phrases)\.json$/.test(p)||/^state\/quiz\/q-[\w-]+\.json$/.test(p);
   const PRACTICE_DAYS=3;   /* practice logs are one file per day; the page only needs the latest few */
 
   let tree=new Map();   /* path → blob sha, the whole repository at `commit` */
@@ -84,6 +86,14 @@
   let files={};         /* state path → {data, baseSha, dirty, rev}; baseSha = the version in the repository this copy grew from */
   const packs=new Map();/* audio path → {sha, p: Promise<pack|null>} */
   let lastRefresh=0;
+  /* photos taken with 记一条 (a word test, the whiteboard): shrunk on this device, kept in IndexedDB (meta 'photo:'+path)
+     until they are up, and uploaded before the inbox note that names them, so the AI never sees a note without its photos.
+     photoQ: jobs {path, op:'put'|'del', at}, oldest first, kept on this device (meta 'photoq') */
+  let photoQ=[], photoBusy='';
+  const photoUrls=new Map();   /* path → object URL of the photo, for thumbnails */
+  const photoMem=new Map();    /* path → photo, when this browser would not keep it in IndexedDB: it still goes up while the page is open */
+  const photoBlob=async path=>(await kv.get('meta','photo:'+path))||photoMem.get(path)||null;
+  const savePhotoQ=()=>kv.set('meta','photoq',photoQ.slice());
 
   const listeners=[]; let pendingEv=null;
   /* listeners hear about a change after the code that made it has finished (one call per kind) */
@@ -92,15 +102,16 @@
     pendingEv.add(type);
   }
 
-  const Store={ready:false,days:[],classes:[],phrases:[],gloss:new Map(),quizzes:[],quizHistory:[],errors:{words:[]},progress:{},inbox:[],practiceLog:[],
+  const Store={ready:false,days:[],classes:[],phrases:[],phraseDone:{},gloss:new Map(),quizzes:[],quizHistory:[],errors:{words:[]},progress:{},inbox:[],practiceLog:[],
     /* state: setup (no token) | loading | ready | auth (token refused) | error */
     status:{state:token?'loading':'setup',done:0,total:0,pending:0,syncing:false,offline:false,error:'',lastSync:0,dirtySince:0,warn:''},
     config:CFG};
   const st=Store.status;
-  const anyDirty=()=>Object.keys(files).some(p=>files[p].dirty);
+  const anyDirty=()=>photoQ.length>0||Object.keys(files).some(p=>files[p].dirty);
   function setStatus(p){
     Object.assign(st,p||{});
-    st.pending=Object.keys(files).filter(k=>files[k].dirty).length;
+    st.photos=photoQ.filter(j=>j.op==='put').length;   /* photos still on this device */
+    st.pending=Object.keys(files).filter(k=>files[k].dirty).length+photoQ.length;
     if(!st.pending) st.dirtySince=0; else if(!st.dirtySince) st.dirtySince=Date.now();
     emit('status');
   }
@@ -139,6 +150,8 @@
     classes.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     phrases.sort((a,b)=>num(a.level)-num(b.level)||num(a.set)-num(b.set));
     Store.days=days; Store.classes=classes; Store.gloss=gloss; Store.quizzes=quizzes; Store.phrases=phrases;
+    /* 短语 sets marked 学完了 on any device: {"ph-16": {on, at}} */
+    Store.phraseDone=(F('state/phrases.json')||{}).done||{};
     Store.quizHistory=((content['data/quiz/history.json']||{}).json||{}).words||[];
     /* error book = the AI's file, plus what was added or removed here since the AI last folded those changes in */
     const base=(content['data/errors.json']||{}).json||{words:[]}, folded=foldedSet();
@@ -166,6 +179,7 @@
         if(!o||String(v.last||'')>String(o.last||'')||(String(v.last||'')===String(o.last||'')&&num(v.right)+num(v.wrong)>=num(o.right)+num(o.wrong))) w[k]=v; });
       return Object.assign({},r,l,{words:w}); },
     stars(r,l){ const s=Object.assign({},r.stars||{}); Object.keys(l.stars||{}).forEach(k=>{ const v=l.stars[k]; if(!s[k]||num(v.at)>=num(s[k].at)) s[k]=v; }); return {stars:s}; },
+    phrases(r,l){ const s=Object.assign({},r.done||{}); Object.keys(l.done||{}).forEach(k=>{ const v=l.done[k]; if(!s[k]||num(v.at)>=num(s[k].at)) s[k]=v; }); return {done:s}; },
     inbox(r,l){ const del=Object.assign({},r.deleted||{},l.deleted||{}), m=new Map();
       (r.notes||[]).concat(l.notes||[]).forEach(n=>{ const o=m.get(n.id); if(!o||num(n.editedAt||n.at)>=num(o.editedAt||o.at)) m.set(n.id,n); });
       return {notes:[...m.values()].filter(n=>!del[n.id]).sort((a,b)=>num(a.at)-num(b.at)),deleted:del}; },
@@ -177,7 +191,7 @@
       if(r.complete&&l.complete) return num(r.finishedAt)<=num(l.finishedAt)?r:l;
       return num(l.savedAt)>=num(r.savedAt)?l:r; }
   };
-  const kindOf=p=>p==='state/progress.json'?'progress':p==='state/stars.json'?'stars':p==='state/inbox.json'?'inbox':p==='state/error-ops.json'?'ops':isPractice(p)?'practice':'quiz';
+  const kindOf=p=>p==='state/progress.json'?'progress':p==='state/stars.json'?'stars':p==='state/phrases.json'?'phrases':p==='state/inbox.json'?'inbox':p==='state/error-ops.json'?'ops':isPractice(p)?'practice':'quiz';
   function merge(p,remote,local){ try{ return MERGE[kindOf(p)](remote||{},local||{}); }catch(e){ return local; } }
   /* before an upload: drop what the AI has already taken over, and old delete marks */
   function prune(p,d){
@@ -186,7 +200,7 @@
       Object.keys(d.deleted).forEach(k=>{ if(num(d.deleted[k])<cut) delete d.deleted[k]; }); }
     else if(p==='state/error-ops.json'){ const folded=foldedSet(); d.ops=(d.ops||[]).filter(o=>!folded.has(o.id)); }
   }
-  const MSG={progress:'记录：拼写进度',stars:'记录：想用标记',inbox:'记录：课堂收集箱',ops:'记录：错词本的增减',practice:'记录：练习',quiz:'记录：测验答卷'};
+  const MSG={progress:'记录：拼写进度',stars:'记录：想用标记',phrases:'记录：短语进度',inbox:'记录：课堂收集箱',ops:'记录：错词本的增减',practice:'记录：练习',quiz:'记录：测验答卷'};
 
   /* ── persistence on this device ── */
   let saveT=null;
@@ -250,6 +264,7 @@
     setStatus({syncing:true});
     syncing=(async()=>{
       try{
+        await pushPhotos();   /* photos first: a note must never reach the AI before the photos it names */
         for(const p of Object.keys(files)) if(files[p]&&files[p].dirty) await push(p);
         setStatus({syncing:false,offline:false,error:'',lastSync:Date.now(),state:'ready'});
         persistTree(); return true;
@@ -290,6 +305,48 @@
     }
     if(f.dirty) throw new Error('同步冲突，稍后再试');
   }
+  function blobB64(blob){ return blob.arrayBuffer().then(buf=>{ const b=new Uint8Array(buf); let s=''; for(let i=0;i<b.length;i+=0x8000) s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000)); return btoa(s); }); }
+  function bumpCommit(r){ if(r&&r.commit&&r.commit.parents&&r.commit.parents[0]&&r.commit.parents[0].sha===commit) commit=r.commit.sha; }
+  /* the sha of a file in the repository right now, or '' when it is not there */
+  async function shaNow(path){
+    try{ const cur=await gh(repoPath()+'/contents/'+encPath(path)+'?ref='+encodeURIComponent(CFG.branch)); return (cur&&cur.sha)||''; }
+    catch(e){ if(e.status===404) return ''; throw e; }
+  }
+  /* upload (or delete) the queued photos one at a time; a network error stops here and the next sync carries on */
+  async function pushPhotos(){
+    while(photoQ.length){
+      const job=photoQ[0], label=job.path.replace(/^state\//,'');
+      const who=CFG.committer?{committer:CFG.committer}:{};
+      photoBusy=job.path;
+      try{
+        if(job.op==='put'){
+          const blob=await photoBlob(job.path);
+          if(blob){
+            let sha='';
+            try{
+              const r=await gh(repoPath()+'/contents/'+encPath(job.path),{method:'PUT',body:Object.assign({message:'记录：照片（'+label+'）',content:await blobB64(blob),branch:CFG.branch},who)});
+              sha=r.content.sha; bumpCommit(r);
+            }catch(e){
+              if(e.status===409||e.status===422){ sha=await shaNow(job.path); if(!sha) throw e; }   /* already up: an earlier try went through but its answer was lost */
+              else if(e.status&&e.status>=400&&e.status<500&&![401,403,429].includes(e.status)){ setStatus({warn:'有一张照片传不上去，跳过了：'+label}); sha=''; }
+              else throw e;
+            }
+            if(sha){ tree.set(job.path,sha); await kv.set('blobs',sha,blob); }
+            await kv.del('meta','photo:'+job.path); photoMem.delete(job.path);
+          }
+        }else{
+          const sha=tree.get(job.path)||await shaNow(job.path);
+          if(sha){
+            try{ const r=await gh(repoPath()+'/contents/'+encPath(job.path),{method:'DELETE',body:Object.assign({message:'记录：删掉照片（'+label+'）',sha,branch:CFG.branch},who)}); bumpCommit(r); }
+            catch(e){ if(![404,409,422].includes(e.status)) throw e; }
+          }
+          tree.delete(job.path);
+        }
+      }finally{ photoBusy=''; }
+      const k=photoQ.indexOf(job); if(k>=0) photoQ.splice(k,1);
+      await savePhotoQ(); setStatus({});
+    }
+  }
   /* change one state file: fn edits the data in place. o.defer = keep it on this device for now (the caller uploads
      later with sync()); o.now = upload straight away; default = upload after a short pause */
   function change(p,init,fn,o){
@@ -299,6 +356,7 @@
     if(!(o&&o.defer)) syncSoon(o&&o.now?0:3000);
   }
   const newId=pre=>pre+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  Store.newNoteId=()=>newId('n');
 
   /* ── public API ── */
   Store.on=fn=>{ listeners.push(fn); };
@@ -310,7 +368,37 @@
   Store.saveQuiz=(id,result,o)=>change('state/quiz/'+id+'.json',{},d=>{ Object.keys(d).forEach(k=>delete d[k]); Object.assign(d,clone(result),{savedAt:Date.now()}); },o);
   Store.savePractice=(sess,o)=>change('state/practice/'+sess.date+'.json',{sessions:[]},d=>{ d.sessions=(d.sessions||[]).filter(x=>x.id!==sess.id); d.sessions.push(clone(sess)); },o);
   Store.setStar=(doc,w,on)=>change('state/stars.json',{stars:{}},d=>{ d.stars=d.stars||{}; d.stars[doc+'|'+w]={on:!!on,at:Date.now()}; });
-  Store.addNote=n=>{ const id=newId('n'); change('state/inbox.json',{notes:[],deleted:{}},d=>{ d.notes=d.notes||[]; d.notes.push(Object.assign({id},clone(n))); }); return id; };
+  Store.setPhraseDone=(id,on)=>change('state/phrases.json',{done:{}},d=>{ d.done=d.done||{}; d.done[id]={on:!!on,at:Date.now()}; });
+  Store.addNote=(n,given)=>{ const id=given||newId('n'); change('state/inbox.json',{notes:[],deleted:{}},d=>{ d.notes=d.notes||[]; d.notes.push(Object.assign({id},clone(n))); }); return id; };
+  /* a photo for a note: kept on this device until it is up (the next sync, which sends it before the note) */
+  Store.addPhoto=async(path,blob)=>{ if(!await kv.set('meta','photo:'+path,blob)) photoMem.set(path,blob); photoQ.push({path,op:'put',at:Date.now()}); await savePhotoQ(); setStatus({}); };
+  /* a deleted note's photos: not sent if they are still waiting here, deleted from the repository if they are up */
+  Store.dropPhotos=async paths=>{
+    for(const p of paths||[]){
+      const i=photoQ.findIndex(j=>j.op==='put'&&j.path===p);
+      if(i>=0&&p!==photoBusy){ photoQ.splice(i,1); await kv.del('meta','photo:'+p); photoMem.delete(p); }
+      else if(tree.has(p)||p===photoBusy) photoQ.push({path:p,op:'del',at:Date.now()});
+      const u=photoUrls.get(p); if(u){ URL.revokeObjectURL(u); photoUrls.delete(p); }
+    }
+    await savePhotoQ(); setStatus({}); syncSoon();
+  };
+  Store.photoWaiting=path=>photoQ.some(j=>j.op==='put'&&j.path===path);
+  Store.photoCached=path=>photoUrls.get(path)||'';
+  /* an object URL for a photo: from this device if it was taken here, else fetched once from the repository and kept */
+  Store.photoURL=async function(path){
+    if(photoUrls.has(path)) return photoUrls.get(path);
+    let blob=await photoBlob(path);
+    if(!blob){
+      const sha=tree.get(path); if(!sha||!token) return null;
+      blob=await kv.get('blobs',sha);
+      if(!(blob instanceof Blob)){
+        try{ blob=new Blob([await gh(repoPath()+'/git/blobs/'+sha,{bin:true})],{type:'image/jpeg'}); kv.set('blobs',sha,blob); }
+        catch(e){ return null; }
+      }
+    }
+    if(!(blob instanceof Blob)) return null;
+    const u=URL.createObjectURL(blob); photoUrls.set(path,u); return u;
+  };
   Store.editNote=(id,n)=>change('state/inbox.json',{notes:[],deleted:{}},d=>{ const i=(d.notes||[]).findIndex(x=>x.id===id); if(i>=0) d.notes[i]=Object.assign({},clone(n),{id}); });
   Store.deleteNote=id=>change('state/inbox.json',{notes:[],deleted:{}},d=>{ d.notes=(d.notes||[]).filter(x=>x.id!==id); d.deleted=d.deleted||{}; d.deleted[id]=Date.now(); });
   Store.removeError=w=>change('state/error-ops.json',{ops:[]},d=>{ d.ops=d.ops||[]; d.ops.push({id:newId('o'),op:'remove',w,at:Date.now()}); });
@@ -343,6 +431,7 @@
   };
   Store.disconnect=async function(){
     token=''; ls.del('vocab.token'); files={}; content={}; tree=new Map(); commit=''; packs.clear(); Store.ready=false;
+    photoQ=[]; photoMem.clear(); photoUrls.forEach(u=>URL.revokeObjectURL(u)); photoUrls.clear();
     await kv.clear(); rebuild(); setStatus({state:'setup',error:'',offline:false,syncing:false}); emit('change');
   };
   Store.setRepo=function(full){ const m=/^([\w.-]+)\/([\w.-]+)$/.exec(String(full||'').trim()); if(!m) return false; ls.set('vocab.repo',m[1]+'/'+m[2]); CFG.owner=m[1]; CFG.repo=m[2]; return true; };
@@ -350,9 +439,10 @@
   async function boot(){
     if(!token){ setStatus({state:'setup'}); return false; }
     const who=[CFG.api,CFG.owner,CFG.repo,CFG.branch].join('|');
-    if(await kv.get('meta','who')!==who){ await kv.clear(); await kv.set('meta','who',who); files={}; content={}; tree=new Map(); commit=''; }
+    if(await kv.get('meta','who')!==who){ await kv.clear(); await kv.set('meta','who',who); files={}; content={}; tree=new Map(); commit=''; photoQ=[]; }
     else if(!Store.ready){
       const c=await kv.get('meta','content'), t=await kv.get('meta','tree'), s=await kv.get('meta','state');
+      photoQ=(await kv.get('meta','photoq'))||[];
       if(s) Object.keys(s).forEach(p=>{ files[p]=Object.assign({rev:0},s[p]); });
       if(c&&t){ content=c; commit=t.commit||''; tree=new Map(t.tree||[]); Store.ready=true; rebuild(); emit('change'); }
     }

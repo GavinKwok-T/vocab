@@ -5,7 +5,9 @@
   /* 课堂: class/c-YYYY-MM-DD docs are organized notes shaped like a day (groups + audio packs); inbox/* are raw captures */
   let classes=[], inbox=[], capEditId=null;   /* capEditId: the inbox note being changed in the capture form */
   /* 短语: sets of common phrases (data/phrases/ph-NN, shaped like a day); phId is the set being read, kept on this device */
-  let phrases=[], phId=store.get('ph-id')||'';
+  let phrases=[], phId=store.get('ph-id')||'', phraseDone={};   /* phraseDone: sets marked 学完了, synced through state/phrases.json */
+  const phDoneOf=id=>!!(phraseDone[id]&&phraseDone[id].on);
+  const nextPhrase=()=>phrases.find(p=>!phDoneOf(p.id))||null;   /* the first set not yet studied, in the 目录's order */
   /* where the reader is: a section (days | class | errors, remembered), the open day and class date (default: the newest),
      the 目录 panel, the search text, the error-book filter */
   let sec='today', pview=false, dayId='', cDate='', idxOpen=false, q='', errB=store.get('err-b')||'todo';   /* pview: a practice or the quiz is on screen */
@@ -120,7 +122,8 @@
   syncVoiceBtns();
   $('#d-toggle').addEventListener('click',()=>{ detAll=!detAll; detTog.clear(); store.set('det-all',detAll?'1':'0'); render(); });
   $('#q-open').addEventListener('click',()=>{ const s=$('#search'); if(s.hidden){ s.hidden=false; $('#q').focus(); } else { clearSearch(); render(); } });
-  /* 记一条: the capture form lives in its own dialog, opened from 今天 and 课堂 */
+  /* 记一条: the capture form lives in its own dialog, opened from the 记一条 button in the tab bar (side bar on a wide
+     screen) on every page, and from the 课堂笔记 line on 今天 */
   function openCap(){ const d=$('#cap-dlg'); if(!d.open) d.showModal(); $('#cap-text').focus(); }
   $('#cap-dlg').addEventListener('close',()=>{ if(capEditId){ endEdit(true); render(); } });
   document.addEventListener('toggle',e=>{ if(e.target.id==='inbox-d') inboxOpen=e.target.open; },true);
@@ -153,8 +156,10 @@
     const searching=!!q.trim(), oq=openQuiz();
     const due=(practice&&!practice.done)||(oq&&String(oq.date)<=todayStr()&&!(oq.result&&oq.result.complete));
     const badge={today:due?'dot':'',class:inbox.length?String(inbox.length):''};
-    const html=NAV.map(([k,label,ic])=>`<button class="navb" role="tab" data-sec="${k}" aria-selected="${!searching&&!pview&&k===sec}">${ic}<span class="nl">${label}</span>${badge[k]?`<span class="nb${badge[k]==='dot'?' dot':''}">${badge[k]==='dot'?'':esc(badge[k])}</span>`:''}</button>`).join('');
-    $('#tabs').innerHTML=html; $('#tabbar').innerHTML=html;
+    const tabs=NAV.map(([k,label,ic])=>`<button class="navb" role="tab" data-sec="${k}" aria-selected="${!searching&&!pview&&k===sec}">${ic}<span class="nl">${label}</span>${badge[k]?`<span class="nb${badge[k]==='dot'?' dot':''}">${badge[k]==='dot'?'':esc(badge[k])}</span>`:''}</button>`);
+    /* 记一条 in the middle of the phone's tab bar; on a wide screen it is its own button under the side bar's tabs */
+    const cap=`<button class="navb navcap" type="button" data-capopen="1">${I.plus}<span class="nl">记一条</span></button>`;
+    $('#tabs').innerHTML=tabs.join(''); $('#tabbar').innerHTML=tabs.slice(0,2).join('')+cap+tabs.slice(2).join('');
   }
   /* IPA: words carry ipaUs / ipaUk; error-book entries borrow them from the day they came from */
   function ipaOf(w){
@@ -310,7 +315,10 @@
   function byMonth(list){ const out=[]; list.forEach(x=>{ const k=monthOf(x.date); let g=out[out.length-1]; if(!g||g.k!==k) out.push(g={k,items:[]}); g.items.push(x); }); return out; }
   function lowScore(s){ const m=/^(\d+)\s*\/\s*(\d+)$/.exec(s||''); return !!(m&&+m[2]&&(+m[1])/(+m[2])<0.7); }
   const countOf=x=>(x.groups||[]).reduce((s,g)=>s+(g.words||[]).length,0);
-  const classNames=x=>[...new Set((x.groups||[]).map(g=>String(g.name||'').split(' · ')[0].split('（')[0]))].join('、');
+  /* a class date in the 目录 shows the words that mattered that day (the starred ones: the teacher's words and any marked
+     想用), or else its first few cards. The class names were the same every day and said nothing */
+  const classPeek=x=>{ const all=(x.groups||[]).flatMap(g=>g.words||[]), star=all.filter(w=>w.star), list=star.length?star:all;
+    return list.slice(0,3).map(w=>w.w).join(', ')+(list.length>3?'…':''); };
   const starCount=x=>(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>w.star).length,0);
   const missCount=x=>missSet?(x.groups||[]).reduce((s,g)=>s+(g.words||[]).filter(w=>missSet.has(w.w.toLowerCase())).length,0):0;
   function pager(kind,title,older,newer){
@@ -340,29 +348,35 @@
     if(!days.length){ view.innerHTML='<div class="empty"><strong>还没有单词</strong>跟 AI 说“今天的单词”，新词就会出现在这里。</div>'; return; }
     let i=days.findIndex(x=>x.id===dayId); if(i<0) i=days.length-1;
     const d=days[i]; loadPack(d.id);
-    const head=pager('day',`Day ${d.day} · ${esc(d.topic||'')}`,days[i-1]&&days[i-1].id,days[i+1]&&days[i+1].id);
+    const head=pager('day',`<span class="t-k">Day ${d.day}</span><span class="t-m">${esc(d.topic||'')}</span>`,days[i-1]&&days[i-1].id,days[i+1]&&days[i+1].id);
     const index=idxHtml(byMonth([...days].reverse()),x=>`<li><button class="idx-row" data-go="day:${esc(x.id)}" aria-current="${x.id===d.id}"><span class="idx-k">Day ${x.day}</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m${lowScore(x.score)?' low':''}">${x.score?esc(x.score):esc(shortDate(x.date))}</span></button></li>`);
     const miss=missCount(d);
     const meta=`<div class="meta-row"><p class="meta">${esc(fmtDate(d.date))} · ${countOf(d)} 个词 · ${d.score?'测验 '+esc(d.score):'还没考'}${miss?' · 错过 '+miss+' 个':''}</p><button class="pill" data-prgo="day:${esc(d.id)}">${I.play}练这一天</button></div>`;
     view.innerHTML=twoPane(index,head+meta+groupsHtml(d,d.id));
   }
 
+  /* a photo in the 待整理 list: shown from this device's copy, or fetched once from the repository (fillThumbs) */
+  const thumbHtml=p=>{ const u=Store.photoCached(p); return `<button type="button" class="thumb" data-photo="${esc(p)}" aria-label="看大图"><img alt=""${u?` src="${u}"`:` data-src="${esc(p)}"`}></button>`; };
+  function fillThumbs(){
+    document.querySelectorAll('img[data-src]').forEach(img=>{ const p=img.dataset.src;
+      Store.photoURL(p).then(u=>{ if(u&&img.isConnected&&img.dataset.src===p){ img.src=u; img.removeAttribute('data-src'); } }); });
+  }
   function renderClass(view){
-    const add=`<div class="meta-row"><button class="go sm" data-capopen="1">${I.plus}记一条</button><button type="button" class="ib sm" data-help="class" aria-label="课堂怎么用">${I.info}</button></div>`;
-    const pend=inbox.length?`<details class="group inbox" id="inbox-d"${inboxOpen||capEditId?' open':''}><summary><span>待整理 ${inbox.length} 条</span><span class="note">跟 AI 说“整理课堂笔记”</span></summary><ol>${inbox.map(x=>`<li${x.id===capEditId?' class="editing"':''}>
-        <div class="main"><span class="in-t">${esc(x.text)}</span><span class="in-m">${[x.star?'★ 想用':'',x.cls||'',x.note||'',when(x.at)+(x.editedAt?'（改过）':'')].filter(Boolean).map(esc).join(' · ')}</span></div>
-        <div class="in-acts"><button class="unmiss" data-cedit="${esc(x.id)}">修改</button><button class="unmiss" data-del="${esc(x.id)}">删除</button></div></li>`).join('')}</ol></details>`:'';
-    if(!classes.length){ view.innerHTML=add+pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课间点“记一条”随手记；晚上跟 AI 说“整理课堂笔记”。</div>`; return; }
+    const nPh=inbox.reduce((s,x)=>s+(x.photos||[]).length,0);
+    const pend=inbox.length?`<details class="group inbox" id="inbox-d"${inboxOpen||capEditId?' open':''}><summary><span>待整理 ${inbox.length} 条${nPh?`（${nPh} 张照片）`:''}</span><span class="note">跟 AI 说“整理课堂笔记”</span></summary><ol>${inbox.map(x=>{ const ph=x.photos||[], wait=ph.some(p=>Store.photoWaiting(p)); return `<li${x.id===capEditId?' class="editing"':''}>
+        <div class="main"><span class="in-t">${esc(x.text)||(ph.length?`照片 ${ph.length} 张`:'')}</span>${ph.length?`<div class="thumbs in-ph">${ph.map(thumbHtml).join('')}</div>`:''}<span class="in-m">${[x.star?'★ 想用':'',x.cls||'',x.note||'',when(x.at)+(x.editedAt?'（改过）':''),wait?'照片还没传上去':''].filter(Boolean).map(esc).join(' · ')}</span></div>
+        <div class="in-acts"><button class="unmiss" data-cedit="${esc(x.id)}">修改</button><button class="unmiss" data-del="${esc(x.id)}">删除</button></div></li>`; }).join('')}</ol></details>`:'';
+    if(!classes.length){ view.innerHTML=pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课间点下面的“记一条”随手记；晚上跟 AI 说“整理课堂笔记”。</div>`; return; }
     let i=classes.findIndex(x=>x.id===cDate); if(i<0) i=0;   /* classes are sorted newest first */
     const c=classes[i]; loadPack(c.id);
-    const head=pager('cls',esc(fmtDate(c.date)),classes[i+1]&&classes[i+1].id,classes[i-1]&&classes[i-1].id);
-    const index=idxHtml(byMonth(classes),x=>`<li><button class="idx-row" data-go="cls:${esc(x.id)}" aria-current="${x.id===c.id}"><span class="idx-k">${esc(shortDate(x.date))}</span><span class="idx-t">${esc(classNames(x))}</span><span class="idx-m">${countOf(x)} 条</span></button></li>`);
+    const head=pager('cls',`<span class="t-k">${esc(weekdayOf(c.date))}</span><span class="t-m">${esc(fmtDate(c.date))}</span>`,classes[i+1]&&classes[i+1].id,classes[i-1]&&classes[i-1].id);
+    const index=idxHtml(byMonth(classes),x=>`<li><button class="idx-row" data-go="cls:${esc(x.id)}" aria-current="${x.id===c.id}"><span class="idx-k">${esc(shortDate(x.date))}</span><span class="idx-t idx-w">${esc(classPeek(x))}</span><span class="idx-m">${countOf(x)} 条</span></button></li>`);
     const st=starCount(c), miss=missCount(c);
-    const meta=`<div class="meta-row"><p class="meta">${countOf(c)} 条${st?' · '+st+' 个想用':''}${miss?' · 错过 '+miss+' 个':''}</p><div class="pacts"><button class="pill star" data-staronly="1" aria-pressed="${starOnly}">★ 只看想用</button>${starredPool().length?`<button class="pill" data-prgo="class">${I.play}练想用的词</button>`:''}</div></div>`;
+    const meta=`<div class="meta-row"><p class="meta">${countOf(c)} 条${st?' · '+st+' 个想用':''}${miss?' · 错过 '+miss+' 个':''}</p><div class="pacts"><button class="pill star" data-staronly="1" aria-pressed="${starOnly}">★ 只看想用</button>${starredPool().length?`<button class="pill" data-prgo="class">${I.play}练想用的词</button>`:''}<button type="button" class="ib sm" data-help="class" aria-label="课堂怎么用">${I.info}</button></div></div>`;
     const body=starOnly&&!st
       ?'<div class="empty"><strong>这一天还没有标“想用”的词</strong>点卡片右边的“☆ 想用”就能标上。</div>'
       :groupsHtml(c,c.id,{star:true,only:starOnly});
-    view.innerHTML=add+pend+twoPane(index,head+meta+body);
+    view.innerHTML=pend+twoPane(index,head+meta+body);
   }
 
   /* 短语: one set at a time with ‹ › and a 目录 grouped by level, like 单词. Not in the quiz: read, listen, cover and check */
@@ -370,27 +384,24 @@
     if(!phrases.length){ view.innerHTML='<div class="empty"><strong>还没有短语</strong>整理好的短语会出现在这里。</div>'; return; }
     let i=phrases.findIndex(x=>x.id===phId); if(i<0) i=0;
     const p=phrases[i]; loadPack(p.id);
-    const head=pager('ph',`${esc(p.set)} · ${esc(p.topic||'')}`,phrases[i-1]&&phrases[i-1].id,phrases[i+1]&&phrases[i+1].id);
+    const head=pager('ph',`<span class="t-k">第 ${esc(p.set)} 组</span><span class="t-m">${esc(p.topic||'')}</span>`,phrases[i-1]&&phrases[i-1].id,phrases[i+1]&&phrases[i+1].id);
     const levels=[]; phrases.forEach(x=>{ const k=x.levelName||'短语'; let g=levels[levels.length-1]; if(!g||g.k!==k) levels.push(g={k,items:[]}); g.items.push(x); });
-    const index=idxHtml(levels,x=>`<li><button class="idx-row" data-go="ph:${esc(x.id)}" aria-current="${x.id===p.id}"><span class="idx-k">第 ${esc(x.set)} 组</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m">${countOf(x)} 个</span></button></li>`);
-    const meta=`<div class="meta-row"><p class="meta">${p.levelName?esc(p.levelName)+' · ':''}${countOf(p)} 个 · 不进测验</p><button type="button" class="ib sm" data-help="phrases" aria-label="短语怎么学">${I.info}</button></div>`;
+    const index=idxHtml(levels,x=>{ const ok=phDoneOf(x.id); return `<li><button class="idx-row" data-go="ph:${esc(x.id)}" aria-current="${x.id===p.id}"><span class="idx-k">第 ${esc(x.set)} 组</span><span class="idx-t">${esc(x.topic||'')}</span><span class="idx-m${ok?' ok':''}">${ok?'学完 · ':''}${countOf(x)} 个</span></button></li>`; });
+    /* 这组学完了: marks the set (synced), so 今天 moves on to the next one; a second tap takes it back */
+    const done=phDoneOf(p.id);
+    const meta=`<div class="meta-row"><p class="meta">${p.levelName?esc(p.levelName)+' · ':''}${countOf(p)} 个 · 不进测验</p><div class="pacts"><button type="button" class="pill" data-phdone="${esc(p.id)}" aria-pressed="${done}">${done?I.ok+'已学完':'这组学完了'}</button><button type="button" class="ib sm" data-help="phrases" aria-label="短语怎么学">${I.info}</button></div></div>`;
     view.innerHTML=twoPane(index,head+meta+groupsHtml(p,p.id));
   }
 
-  /* 今天: what is waiting (tonight's quiz, the newest day, the error book, class notes) and how it is going
-     (days learned, cards, error-book size, the last quiz scores) */
+  /* 今天: one column of things to do, in the order they come up: tonight's quiz first, then the newest day, the error
+     book, a phrase set and the class notes; one quiet line at the end says how far along it is */
   const WK=['日','一','二','三','四','五','六'];
+  const weekdayOf=s=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); return m?'周'+WK[new Date(+m[1],+m[2]-1,+m[3]).getDay()]:''; };
   function pctOf(s){ const m=/^(\d+)\s*\/\s*(\d+)$/.exec(s||''); return m&&+m[2]?Math.round(+m[1]/+m[2]*100):null; }
   function renderToday(view){
     const now=new Date(), t=todayStr(), ws=errors?errors.words||[]:[];
-    const nCards=days.reduce((s,d)=>s+countOf(d),0)+classes.reduce((s,c)=>s+countOf(c),0);
-    const stats=`<section class="stats"><div class="stat"><span>已学</span><b>${days.length}</b> 天</div><div class="stat"><span>卡片</span><b>${nCards}</b></div><div class="stat"><span>错词本</span><b>${ws.length}</b></div></section>`;
-    /* the last quizzes with a score (written by the AI when it grades) */
-    const scored=quizzes.filter(x=>x.graded&&pctOf(x.score)!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-7);
-    const last=scored[scored.length-1];
-    const chart=scored.length?`<section class="group chart"><div class="chart-h"><span>近 ${scored.length} 次测验</span><b>${esc(last.score)} · ${pctOf(last.score)}%</b></div>
-        <div class="bars" role="img" aria-label="近 ${scored.length} 次测验的正确率：${scored.map(x=>shortDate(x.date)+' '+pctOf(x.score)+'%').join('，')}">${scored.map((x,i)=>{ const p=pctOf(x.score); return `<i class="${p<70?'low':''}${i===scored.length-1?' cur':''}" style="height:${Math.max(10,Math.round((p-50)/50*100))}%" title="${esc(shortDate(x.date))} · ${esc(x.score)}"></i>`; }).join('')}</div>
-        <div class="chart-x"><span>${esc(shortDate(scored[0].date))}</span><span>${esc(shortDate(last.date))}</span></div></section>`:'';
+    /* the last quiz with a score (written by the AI when it grades) */
+    const last=quizzes.filter(x=>x.graded&&pctOf(x.score)!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date))).pop();
     const d=days[days.length-1], all=Store.practiceAll||[];
     const dayRuns=d?all.filter(s=>s.src==='day'&&String(s.label||'').startsWith(`Day ${d.day} `)):[];
     const errRuns=all.filter(s=>s.src==='errors'&&s.date===t);
@@ -398,15 +409,20 @@
     const row=(done,title,sub,btn)=>`<li class="${done?'done':''}">${done?I.ok:I.todo}<div class="main"><span class="tt">${title}</span><span class="in-m">${sub}</span></div>${btn}</li>`;
     const rows=(d?row(dayRuns.length>0,`练新词 Day ${d.day}`,esc(d.topic||'')+' · '+(dayRuns.length?`已练 ${dayRuns.length} 遍，最近 ${dayRuns[0].right|0}/${dayRuns[0].done|0}`:`${countOf(d)} 个词，还没练`),`<button class="pill" data-prgo="day:${esc(d.id)}">${I.play}练</button>`):'')
       +(ws.length?row(errRuns.length>0,'错词回炉',`待练 ${waiting} 个`+(errRuns.length?` · 今天练了 ${errRuns.length} 次`:''),`<button class="pill" data-prgo="errors">${I.play}练</button>`):'')
-      +row(false,'课堂笔记',inbox.length?`待整理 ${inbox.length} 条`:'课间听到的词随手记',`<button class="pill" data-capopen="1">${I.plus}记一条</button>`);
+      +phraseRow(row,t)
+      +row(false,'课堂笔记',inbox.length?`待整理 ${inbox.length} 条`+(inbox.some(x=>(x.photos||[]).length)?`，含照片 ${inbox.reduce((s,x)=>s+(x.photos||[]).length,0)} 张`:''):'课间听到的词随手记，板书和单词测验可以拍照',`<button class="pill" data-capopen="1">${I.plus}记一条</button>`);
     const resume=practice&&!practice.done&&!practice.sheet?`<section class="group qcard"><div class="qc-b"><div><span class="plab">练习做到一半</span><p class="meta">${esc(practice.label)} · 第 ${practice.i+1} / ${practice.items.length} 题</p></div><button class="go" data-prgo="resume">继续</button></div></section>`:'';
-    const recent=practiceLog.slice(0,5);
-    const rec=recent.length?`<section class="group recent"><h3>最近的练习</h3><ol>${recent.map(r=>`<li><span>${esc(when(r.at))} · ${esc(r.label||'')} · ${esc(MODE_L[r.mode]||'')}</span><span class="r-s">${r.right|0} / ${r.done|0}</span></li>`).join('')}</ol></section>`:'';
+    const sum=[`已学 ${days.length} 天`,`错词本 ${ws.length} 个`,last?`上次测验 ${esc(last.score)}`:''].filter(Boolean).join(' · ');
     view.innerHTML=`<p class="meta">${now.getMonth()+1} 月 ${now.getDate()} 日 周${WK[now.getDay()]}</p>
-      <div class="today">
-        <div class="t-main">${quizCardHtml()}${resume}<section class="group"><ol class="todos">${rows}</ol></section></div>
-        <div class="t-side">${stats}${chart}${rec}</div>
-      </div>`;
+      <div class="today">${quizCardHtml()}${resume}<section class="group"><ol class="todos">${rows}</ol></section><p class="meta t-sum">${sum}</p></div>`;
+  }
+  /* 学短语: the first set not yet marked 学完了; ticked once a set has been marked today */
+  function phraseRow(row,t){
+    if(!phrases.length) return '';
+    const np=nextPhrase(), n=phrases.filter(p=>phDoneOf(p.id)).length;
+    const today=Object.values(phraseDone).some(v=>v&&v.on&&localDate(new Date(+v.at))===t);
+    if(!np) return row(true,'短语都学完了',`${phrases.length} 组都标了学完`,'');
+    return row(today,`学短语 · 第 ${esc(np.set)} 组`,`${esc(np.topic||'')} · 已学完 ${n} / ${phrases.length} 组`,`<button class="pill" data-go="ph:${esc(np.id)}">${I.talk}看</button>`);
   }
 
   /* error book: one line per word (word, meaning, the three streak dots, a speak button), sorted by how much it needs
@@ -870,6 +886,7 @@
     document.body.classList.toggle('has-bar',inP&&!!practice.sheet&&!practice.done);
     $('#title').textContent=!ready?'雅思词汇本':inP?(practice.sheet?'测验':'练习'):searching?'搜索':TITLES[sec];
     $('#tools').hidden=!ready||inP||(!searching&&sec==='today');
+    document.body.classList.toggle('has-tools',!$('#tools').hidden);   /* the tool row then draws the line under the top bar */
     $('#d-toggle').hidden=!searching&&sec==='errors';
     $('#d-toggle').setAttribute('aria-pressed',detAll);
     if(!ready){ view.innerHTML=gateHtml(); return; }
@@ -889,6 +906,7 @@
     if(keep&&pb&&!pb.readOnly&&pb.dataset.k===keep.k){ pb.value=keep.v; if(keep.f){ pb.focus({preventScroll:true}); try{ pb.setSelectionRange(keep.s,keep.e); }catch(e){} } }
     const sb=sk&&$(`.sin[data-si="${sk.i}"]`);
     if(sb){ sb.focus({preventScroll:true}); try{ sb.setSelectionRange(sk.s,sk.e); }catch(e){} }
+    fillThumbs();
   }
   function openRef(ref){
     const at=ref.indexOf(':'), k=ref.slice(0,at), v=ref.slice(at+1); if(!v) return;
@@ -914,6 +932,7 @@
     if(e.target.tagName==='DIALOG'){ e.target.close(); return; }   /* a tap on the backdrop */
     if(e.target.closest('[data-capopen]')){ if(capEditId) endEdit(true); openCap(); return; }
     const nt=e.target.closest('[data-note]'); if(nt){ openDlg('text',{title:nt.dataset.nt,text:nt.dataset.note}); return; }
+    const ph=e.target.closest('[data-photo]'); if(ph){ openDlg('photo',{path:ph.dataset.photo}); return; }
     const dt=e.target.closest('[data-det]'); if(dt){ const li=dt.closest('li.word'), c=li&&cards[+li.dataset.ci]; if(c){ detTog.has(c.key)?detTog.delete(c.key):detTog.add(c.key); render(); } return; }
     if(e.target.closest('[data-syncnow]')){ Store.sync().then(()=>Store.refresh()); return; }
     if(e.target.closest('[data-reload]')){ Store.refresh(true); return; }
@@ -932,6 +951,7 @@
     const es=e.target.closest('[data-errsort]'); if(es){ errSort=({weak:'new',new:'old',old:'weak'})[errSort]; store.set('err-sort',errSort); render(); return; }
     const sb2=e.target.closest('[data-star]'); if(sb2){ toggleStar(sb2); return; }
     const so=e.target.closest('[data-staronly]'); if(so){ starOnly=!starOnly; store.set('star-only',starOnly?'1':'0'); render(); return; }
+    const pd=e.target.closest('[data-phdone]'); if(pd){ togglePhraseDone(pd.dataset.phdone); return; }
     /* practice */
     const pg=e.target.closest('[data-prgo]'); if(pg){
       const v=pg.dataset.prgo;
@@ -989,15 +1009,18 @@
   });
   /* back to top: shows after about a screen of scrolling, hides again at the top */
   const toTop=$('#totop'); let topTick=false;
-  function syncTop(){ topTick=false; toTop.hidden=window.scrollY<700; }
+  function syncTop(){ topTick=false; toTop.hidden=window.scrollY<700; document.body.classList.toggle('scrolled',window.scrollY>4); }
   window.addEventListener('scroll',()=>{ if(!topTick){ topTick=true; requestAnimationFrame(syncTop); } },{passive:true});
   toTop.addEventListener('click',()=>{
     const still=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     toTop.blur(); window.scrollTo({top:0,behavior:still?'auto':'smooth'});
   });
   syncTop();
-  /* the tool bar sticks to the top; a hairline shows once the page has scrolled under it */
-  if('IntersectionObserver' in window) new IntersectionObserver(([en])=>$('#tools').classList.toggle('stuck',!en.isIntersecting)).observe($('#stick-mark'));
+  /* the tool bar sticks under the top bar; a hairline shows once the page has scrolled under it */
+  if('IntersectionObserver' in window){
+    const topOff=$('.top').offsetHeight+(parseFloat(getComputedStyle(document.documentElement).paddingTop)||0);
+    new IntersectionObserver(([en])=>$('#tools').classList.toggle('stuck',!en.isIntersecting),{rootMargin:`-${Math.round(topOff)}px 0px 0px 0px`}).observe($('#stick-mark'));
+  }
   /* 错词只由用户自己移出：第一次点按钮变成“确定移出？”，3 秒内再点才写入 */
   let pending=null;
   async function unmiss(btn){
@@ -1022,17 +1045,62 @@
     toast(on?`已标“想用”：${w.w}，下次测验会考`:`已取消“想用”：${w.w}`);
   }
 
+  /* 这组学完了 on a phrase set: kept in state/phrases.json (both devices see it); 今天 then offers the next set */
+  function togglePhraseDone(id){
+    if(!Store.ready){ toast('数据还在读取，稍等几秒再点'); return; }
+    const on=!phDoneOf(id), p=phrases.find(x=>x.id===id), n=p?p.set:'';
+    Store.setPhraseDone(id,on); phraseDone=Store.phraseDone||{}; render();
+    const np=nextPhrase();
+    toast(on?(np?`第 ${n} 组学完了，下一组是第 ${np.set} 组`:'短语都学完了'):`第 ${n} 组改回没学完`);
+  }
+
   /* quick capture: one line of text (+ optional note, class, star) becomes one inbox doc; AI deletes it after organizing.
      修改 loads a note back into the same form; saving rewrites that doc (keeping when it was first written). A note AI
      has already organized is gone from the inbox and can no longer be changed: what was typed can be kept as a new note. */
-  const CLS=['口语','听力','阅读','语法','讨论','写作','发音','其他'];
+  const CLS=['口语','听力','阅读','语法','讨论','写作','发音','单词测验','其他'];
   let capCls=store.get('cap-cls')||'', capStar=false;
+  /* photos picked for the note being written: {blob, url}; shrunk here (long side 1800 px, JPEG) so a whiteboard stays
+     readable at about 300 KB. A note may be photos only (a word test, the whiteboard) */
+  const PH_MAX=9, PH_SIDE=1800, PH_Q=0.8;
+  let capPhotos=[], capBusy=0;
+  async function shrinkPhoto(file){
+    let src=null, url='';
+    try{ src=await createImageBitmap(file,{imageOrientation:'from-image'}); }catch(e){ src=null; }
+    if(!src){ url=URL.createObjectURL(file); src=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('decode')); im.src=url; }); }
+    try{
+      const w=src.width||src.naturalWidth, h=src.height||src.naturalHeight; if(!w||!h) throw new Error('decode');
+      const k=Math.min(1,PH_SIDE/Math.max(w,h)), c=document.createElement('canvas');
+      c.width=Math.round(w*k); c.height=Math.round(h*k);
+      const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(src,0,0,c.width,c.height);
+      const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',PH_Q)); if(!blob) throw new Error('encode');
+      return blob;
+    }finally{ if(url) URL.revokeObjectURL(url); if(src&&src.close) src.close(); }
+  }
+  function clearCapPhotos(){ capPhotos.forEach(p=>URL.revokeObjectURL(p.url)); capPhotos=[]; }
   function syncCap(){
     $('#cap-cls').innerHTML=CLS.map(c=>`<button type="button" class="pill" data-cls="${c}" aria-pressed="${c===capCls}">${c}</button>`).join('');
     $('#cap-star').setAttribute('aria-pressed',capStar);
     $('#cap-editing').hidden=!capEditId;
     $('#cap-go').textContent=capEditId?'保存修改':'记下';
+    $('#cap-ph').hidden=!!capEditId;   /* a note's photos stay as they were when it is changed */
+    $('#cap-thumbs').hidden=!!capEditId||!capPhotos.length;
+    $('#cap-thumbs').innerHTML=capPhotos.map((p,i)=>`<li><img src="${p.url}" alt="第 ${i+1} 张照片"><button type="button" class="thumb-x" data-thx="${i}" aria-label="去掉第 ${i+1} 张">×</button></li>`).join('');
+    $('#cap-ph-n').textContent=capBusy?'正在处理照片…':capPhotos.length?`${capPhotos.length} 张，记下后自动上传`:'';
+    $('#cap-text').placeholder=capPhotos.length&&!capEditId?'这是什么（可以不写）':'听到的词或句子';
   }
+  $('#cap-file').addEventListener('change',async e=>{
+    const list=[...(e.target.files||[])]; e.target.value='';
+    let bad=0, over=0;
+    for(const f of list){
+      if(capPhotos.length>=PH_MAX){ over++; continue; }
+      capBusy++; syncCap();
+      try{ const blob=await shrinkPhoto(f); capPhotos.push({blob,url:URL.createObjectURL(blob)}); }catch(err){ bad++; }
+      finally{ capBusy--; syncCap(); }
+    }
+    if(bad) toast(`${bad} 张照片打不开（可能是 HEIC 格式），换成 JPG 再选`);
+    else if(over) toast(`一条最多 ${PH_MAX} 张，多的没加上`);
+  });
+  $('#cap-thumbs').addEventListener('click',e=>{ const x=e.target.closest('[data-thx]'); if(!x) return; const i=+x.dataset.thx, p=capPhotos[i]; if(p){ URL.revokeObjectURL(p.url); capPhotos.splice(i,1); syncCap(); } });
   syncCap();
   function editCapture(id){
     const x=inbox.find(n=>n.id===id); if(!x) return;
@@ -1052,8 +1120,9 @@
   $('#cap-star').addEventListener('click',()=>{ capStar=!capStar; syncCap(); });
   $('#cap').addEventListener('submit',async e=>{
     e.preventDefault();
-    const tx=$('#cap-text'), nt=$('#cap-note'), go=$('#cap-go'), text=tx.value.trim();
-    if(!text){ tx.focus(); return; }
+    const tx=$('#cap-text'), nt=$('#cap-note'), go=$('#cap-go'), text=tx.value.trim(), withPh=!capEditId&&capPhotos.length>0;
+    if(capBusy){ toast('照片还在处理，稍等一下'); return; }
+    if(!text&&!withPh){ tx.focus(); return; }
     if(!Store.ready){ toast('数据还在读取，稍等几秒再点'); return; }
     const now=new Date(), data={text:text.slice(0,200),at:now.getTime(),date:localDate(now)};
     if(nt.value.trim()) data.note=nt.value.trim().slice(0,300);
@@ -1062,11 +1131,20 @@
     if(capEditId){
       const old=inbox.find(x=>x.id===capEditId);
       if(!old){ endEdit(false); render(); toast('这条刚被 AI 整理成卡片了，改不了；你写的还在框里，点“记下”可以存成新的一条'); return; }
+      if(!text&&!(old.photos||[]).length){ tx.focus(); return; }
+      if(old.photos) data.photos=old.photos;
       Store.editNote(capEditId,{...data,at:old.at||data.at,date:old.date||data.date,editedAt:now.getTime()});
       endEdit(true); inbox=Store.inbox; $('#cap-dlg').close(); render(); toast('改好了');
     }else{
-      Store.addNote(data); inbox=Store.inbox;
-      tx.value=''; nt.value=''; capStar=false; syncCap(); render(); toast('记下了'); tx.focus();
+      go.disabled=true;
+      try{
+        /* the photos go into the queue first (state/photos/日期/笔记id-序号.jpg); the note that names them follows */
+        const id=Store.newNoteId(), n=capPhotos.length;
+        if(withPh){ data.photos=capPhotos.map((_,i)=>`state/photos/${data.date}/${id}-${i+1}.jpg`); for(let i=0;i<n;i++) await Store.addPhoto(data.photos[i],capPhotos[i].blob); }
+        Store.addNote(data,id); inbox=Store.inbox;
+        tx.value=''; nt.value=''; capStar=false; clearCapPhotos(); syncCap(); render();
+        toast(withPh?`记下了，${n} 张照片会自动传上去`:'记下了'); tx.focus();
+      }finally{ go.disabled=false; }
     }
   });
   async function delCapture(btn){
@@ -1077,7 +1155,9 @@
     }
     if(!Store.ready) return;
     if(btn.dataset.del===capEditId) endEdit(true);
-    Store.deleteNote(btn.dataset.del); inbox=Store.inbox; render();
+    const x=inbox.find(n=>n.id===btn.dataset.del);
+    Store.deleteNote(btn.dataset.del); if(x&&x.photos) Store.dropPhotos(x.photos);
+    inbox=Store.inbox; render();
   }
   document.addEventListener('keydown',e=>{ if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('cover')){e.preventDefault();uncover(e.target);} });
 
@@ -1107,7 +1187,7 @@
   function syncBadge(){
     const s=Store.status, on=Store.hasToken();
     $('#sync-btn').dataset.k=!on?'off':s.state==='auth'?'bad':s.syncing?'busy':s.pending?(s.offline||s.error?'bad':'busy'):s.offline?'off':'ok';
-    $('#sync-txt').textContent=!on?'未连接':s.state==='auth'?'令牌失效':s.syncing?'正在同步':s.pending?`${s.pending} 项待同步`:s.offline?'离线':s.state==='loading'?'读取中':'已同步';
+    $('#sync-txt').textContent=!on?'未连接':s.state==='auth'?'令牌失效':s.syncing?(s.photos?`正在传 ${s.photos} 张照片`:'正在同步'):s.pending?(s.photos?`${s.photos} 张照片待上传`:`${s.pending} 项待同步`):s.offline?'离线':s.state==='loading'?'读取中':'已同步';
   }
   let dlgKind='', latest=null;
   function settingsHtml(){
@@ -1127,8 +1207,8 @@
   const HELP={
     cards:['单词卡',['点喇叭听发音。一天的发音第一次播放要下载，之后就存在这台设备上。','例句里的每个词都能点，会弹出它在这句里的音标、意思和发音。','卡片下面的“记法”“词族”“搭配”点一下展开；工具栏的“展开详情”一次全部展开。','单词后面的小框是词性。红色的“错过”表示这个词在错词本里。']],
     cover:['遮住自测',['“遮中文”“遮英文”把一边盖住，点灰色块看答案。','点开一块，这张卡片同一边的内容一起打开。']],
-    class:['课堂',['课间点“记一条”，把听到的词或句子记下来，拼错、只写读音都行。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
-    phrases:['短语',['这里是常用短语：每个词都认识，连在一起意思却猜不出来。现在是第一级，全由简单词组成；学得差不多了再加第二级。','短语不进每晚测验，有空就翻一组。','学法：点上面的“遮中文”，先看英文、点喇叭听，说出意思，再点灰块核对。','卡片下面的“记法”写着什么时候用、容易和什么弄混。']],
+    class:['课堂',['课间点“记一条”（手机在底栏中间，电脑在左边栏），把听到的词或句子记下来，拼错、只写读音都行。在哪一页都能点。','板书、单词测验、课本页：在“记一条”里点“拍照或选照片”，一次最多 9 张，可以不写字，选好是哪节课再点“记下”。照片会自动传上去（没网时先存在手机上），AI 整理课堂笔记时直接就能看到，不用再把照片发到聊天里。','目录里每天那一行显示当天老师给的词（没有就显示前几个词），方便找回某天学的词。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
+    phrases:['短语',['这里是常用短语：每个词都认识，连在一起意思却猜不出来。第一级全由简单词组成；后面几组是课上、听力练习和每日单词里碰到的短语。','短语不进每晚测验，有空就翻一组。看完一组点“这组学完了”，“今天”页会接着提醒下一组；点错了再点一次就取消。','学法：点上面的“遮中文”，先看英文、点喇叭听，说出意思，再点灰块核对。','卡片下面的“记法”写着什么时候用、容易和什么弄混。']],
     quiz:['每晚测验',['像一张卷子：看中文写英文，回车跳到下一题，交卷前可以随便改。','中途可以点“先停在这里”，回来接着写。','交卷后才显示对错。等右上角显示“已同步”，再回到 AI 的会话说“考完了”。','判分严格：多一个 s、少一个连字符都算错。']],
     practice:['拼写练习',['看中文或听发音，把英文拼出来，马上知道对错。','拼对自动进下一题；拼错要照着正确拼写打一遍。','一个词每天最多算一次拼对，拼错就重新数。']],
     errors:['错词本',['测验里错过的词都在这里。三个点表示连续几天拼对。','连续 3 天拼对会进“可移出”，移不移出由你自己决定。','点“练错词本”时轮流出题：练过次数少的先出，刚练过的排到后面，同一批词不会天天出现。','点一行展开，看错误记录、记法和例句。']],
@@ -1149,9 +1229,11 @@
     return dlgHead(keys.length>1?'使用说明':HELP[keys[0]][0])+keys.map(x=>`${keys.length>1?`<h3 class="hh">${esc(HELP[x][0])}</h3>`:''}<ul class="hl">${HELP[x][1].map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`).join('');
   }
   let dlgArg=null;
-  const dlgHtml=()=>dlgKind==='settings'?settingsHtml():dlgKind==='practice'?practiceSetupHtml():dlgKind==='text'?dlgHead(dlgArg.title)+`<p class="dlg-p">${esc(dlgArg.text)}</p>`:helpHtml(dlgKind);
+  const dlgHtml=()=>dlgKind==='settings'?settingsHtml():dlgKind==='practice'?practiceSetupHtml():dlgKind==='text'?dlgHead(dlgArg.title)+`<p class="dlg-p">${esc(dlgArg.text)}</p>`
+    :dlgKind==='photo'?dlgHead('照片')+`<img class="ph-big" alt="照片"${Store.photoCached(dlgArg.path)?` src="${Store.photoCached(dlgArg.path)}"`:` data-src="${esc(dlgArg.path)}"`}>`:helpHtml(dlgKind);
   function openDlg(kind,arg){
     dlgKind=kind; dlgArg=arg||null; $('#dlg-in').innerHTML=dlgHtml(); $('#dlg-voice').hidden=kind!=='settings';
+    $('#dlg').classList.toggle('wide',kind==='photo'); if(kind==='photo') fillThumbs();
     if(!$('#dlg').open) $('#dlg').showModal();
     $('#dlg').scrollTop=0;
     if(kind==='settings'&&Store.hasToken()) Store.latestContent().then(x=>{ if(x){ latest=x; refreshDlg(); } });
@@ -1169,7 +1251,7 @@
 
   /* data: everything comes from the store (store.js), which reads the private repository and keeps a copy on this device */
   function pull(){
-    days=Store.days; classes=Store.classes; phrases=Store.phrases||[]; errors=Store.errors; progress=Store.progress; quizzes=Store.quizzes;
+    days=Store.days; classes=Store.classes; phrases=Store.phrases||[]; phraseDone=Store.phraseDone||{}; errors=Store.errors; progress=Store.progress; quizzes=Store.quizzes;
     quizHistory=Store.quizHistory; practiceLog=Store.practiceLog; inbox=Store.inbox; gloss=Store.gloss; daysLoaded=Store.ready;
   }
   Store.on(type=>{
