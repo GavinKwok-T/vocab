@@ -122,8 +122,8 @@
   syncVoiceBtns();
   $('#d-toggle').addEventListener('click',()=>{ detAll=!detAll; detTog.clear(); store.set('det-all',detAll?'1':'0'); render(); });
   $('#q-open').addEventListener('click',()=>{ const s=$('#search'); if(s.hidden){ s.hidden=false; $('#q').focus(); } else { clearSearch(); render(); } });
-  /* 记一条: the capture form lives in its own dialog, opened from the 记一条 button in the tab bar (side bar on a wide
-     screen) on every page, and from the 课堂笔记 line on 今天 */
+  /* 记一条: the capture form lives in its own dialog, opened from the ＋ in the top bar (it stays on screen on every page,
+     next to 美 | 英), and from the 课堂笔记 line on 今天 */
   function openCap(){ const d=$('#cap-dlg'); if(!d.open) d.showModal(); $('#cap-text').focus(); }
   $('#cap-dlg').addEventListener('close',()=>{ if(capEditId){ endEdit(true); render(); } });
   document.addEventListener('toggle',e=>{ if(e.target.id==='inbox-d') inboxOpen=e.target.open; },true);
@@ -156,10 +156,8 @@
     const searching=!!q.trim(), oq=openQuiz();
     const due=(practice&&!practice.done)||(oq&&String(oq.date)<=todayStr()&&!(oq.result&&oq.result.complete));
     const badge={today:due?'dot':'',class:inbox.length?String(inbox.length):''};
-    const tabs=NAV.map(([k,label,ic])=>`<button class="navb" role="tab" data-sec="${k}" aria-selected="${!searching&&!pview&&k===sec}">${ic}<span class="nl">${label}</span>${badge[k]?`<span class="nb${badge[k]==='dot'?' dot':''}">${badge[k]==='dot'?'':esc(badge[k])}</span>`:''}</button>`);
-    /* 记一条 in the middle of the phone's tab bar; on a wide screen it is its own button under the side bar's tabs */
-    const cap=`<button class="navb navcap" type="button" data-capopen="1">${I.plus}<span class="nl">记一条</span></button>`;
-    $('#tabs').innerHTML=tabs.join(''); $('#tabbar').innerHTML=tabs.slice(0,2).join('')+cap+tabs.slice(2).join('');
+    const html=NAV.map(([k,label,ic])=>`<button class="navb" role="tab" data-sec="${k}" aria-selected="${!searching&&!pview&&k===sec}">${ic}<span class="nl">${label}</span>${badge[k]?`<span class="nb${badge[k]==='dot'?' dot':''}">${badge[k]==='dot'?'':esc(badge[k])}</span>`:''}</button>`).join('');
+    $('#tabs').innerHTML=html; $('#tabbar').innerHTML=html;
   }
   /* IPA: words carry ipaUs / ipaUk; error-book entries borrow them from the day they came from */
   function ipaOf(w){
@@ -373,7 +371,7 @@
     const pend=inbox.length?`<details class="group inbox" id="inbox-d"${inboxOpen||capEditId?' open':''}><summary><span>待整理 ${inbox.length} 条${nPh?`（${nPh} 张照片）`:''}</span><span class="note">跟 AI 说“整理课堂笔记”</span></summary><ol>${inbox.map(x=>{ const ph=x.photos||[], wait=ph.some(p=>Store.photoWaiting(p)); return `<li${x.id===capEditId?' class="editing"':''}>
         <div class="main"><span class="in-t">${esc(x.text)||(ph.length?`照片 ${ph.length} 张`:'')}</span>${ph.length?`<div class="thumbs in-ph">${ph.map(thumbHtml).join('')}</div>`:''}<span class="in-m">${[x.star?'★ 想用':'',x.cls||'',x.note||'',when(x.at)+(x.editedAt?'（改过）':''),wait?'照片还没传上去':''].filter(Boolean).map(esc).join(' · ')}</span></div>
         <div class="in-acts"><button class="unmiss" data-cedit="${esc(x.id)}">修改</button><button class="unmiss" data-del="${esc(x.id)}">删除</button></div></li>`; }).join('')}</ol></details>`:'';
-    if(!classes.length){ view.innerHTML=pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课间点下面的“记一条”随手记；晚上跟 AI 说“整理课堂笔记”。</div>`; return; }
+    if(!classes.length){ view.innerHTML=pend+`<div class="empty"><strong>还没有整理好的课堂词句</strong>课间点右上角的“＋”随手记；晚上跟 AI 说“整理课堂笔记”。</div>`; return; }
     let i=classes.findIndex(x=>x.id===cDate); if(i<0) i=0;   /* classes are sorted newest first */
     const c=classes[i]; loadPack(c.id);
     const head=pager('cls',`<span class="t-k">${esc(weekdayOf(c.date))}</span><span class="t-m">${esc(fmtDate(c.date))}</span>`,classes[i+1]&&classes[i+1].id,classes[i-1]&&classes[i-1].id);
@@ -1218,7 +1216,7 @@
   function syncBadge(){
     const s=Store.status, on=Store.hasToken();
     $('#sync-btn').dataset.k=!on?'off':s.state==='auth'?'bad':s.syncing?'busy':s.pending?(s.offline||s.error?'bad':'busy'):s.offline?'off':'ok';
-    $('#sync-txt').textContent=!on?'未连接':s.state==='auth'?'令牌失效':s.syncing?(s.photos?`正在传 ${s.photos} 张照片`:'正在同步'):s.pending?(s.photos?`${s.photos} 张照片待上传`:`${s.pending} 项待同步`):s.offline?'离线':s.state==='loading'?'读取中':'已同步';
+    $('#sync-txt').textContent=!on?'未连接':s.state==='auth'?'令牌失效':s.syncing?(s.photos?'正在传照片':'正在同步'):s.pending?(s.photos?`${s.photos} 张照片待传`:`${s.pending} 项待同步`):s.offline?'离线':s.state==='loading'?'读取中':'已同步';
   }
   let dlgKind='', latest=null;
   function settingsHtml(){
@@ -1238,7 +1236,7 @@
   const HELP={
     cards:['单词卡',['点喇叭听发音。一天的发音第一次播放要下载，之后就存在这台设备上。','例句里的每个词都能点，会弹出它在这句里的音标、意思和发音。','卡片下面的“记法”“词族”“搭配”点一下展开；工具栏的“展开详情”一次全部展开。','单词后面的小框是词性。红色的“错过”表示这个词在错词本里。']],
     cover:['遮住自测',['“遮中文”“遮英文”把一边盖住，点灰色块看答案。','点开一块，这张卡片同一边的内容一起打开。']],
-    class:['课堂',['课间点“记一条”（手机在底栏中间，电脑在左边栏），把听到的词或句子记下来，拼错、只写读音都行。在哪一页都能点。','板书、单词测验、课本页：在“记一条”里点“拍照或选照片”，一次最多 9 张，可以不写字，选好是哪节课再点“记下”。照片会自动传上去（没网时先存在手机上），AI 整理课堂笔记时直接就能看到，不用再把照片发到聊天里。','目录里每天那一行显示当天老师给的词（没有就显示前几个词），方便找回某天学的词。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
+    class:['课堂',['课间点右上角“美 / 英”左边的绿色“＋”（电脑上写着“记一条”），把听到的词或句子记下来，拼错、只写读音都行。在哪一页都能点。','板书、单词测验、课本页：在“记一条”里点“拍照或选照片”，一次最多 9 张，可以不写字，选好是哪节课再点“记下”。照片会自动传上去（没网时先存在手机上），AI 整理课堂笔记时直接就能看到，不用再把照片发到聊天里。','目录里每天那一行显示当天老师给的词（没有就显示前几个词），方便找回某天学的词。','晚上跟 AI 说“整理课堂笔记”，整理好的会变成能听发音的卡片，按日期排。','卡片右边的“☆ 想用”：标了的词会进之后的测验，每次最多 5 个。']],
     phrases:['短语',['这里是常用短语：每个词都认识，连在一起意思却猜不出来。第一级全由简单词组成；后面几组是课上、听力练习和每日单词里碰到的短语。','短语不进每晚测验，有空就翻一组。看完一组点“这组学完了”，“今天”页会接着提醒下一组；点错了再点一次就取消。','学法：点上面的“遮中文”，先看英文、点喇叭听，说出意思，再点灰块核对。','卡片下面的“记法”写着什么时候用、容易和什么弄混。']],
     quiz:['每晚测验',['像一张卷子：看中文写英文，回车跳到下一题，交卷前可以随便改。','中途可以点“先停在这里”，回来接着写。','交卷后才显示对错。等右上角显示“已同步”，再回到 AI 的会话说“考完了”。','判分严格：多一个 s、少一个连字符都算错。']],
     practice:['拼写练习',['看中文或听发音，把英文拼出来，马上知道对错。','拼对自动进下一题；拼错要照着正确拼写打一遍。','一个词每天最多算一次拼对，拼错就重新数。']],
