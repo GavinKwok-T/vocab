@@ -356,7 +356,14 @@
   }
 
   /* a photo in the 待整理 list: shown from this device's copy, or fetched once from the repository (fillThumbs) */
-  const thumbHtml=p=>{ const u=Store.photoCached(p); return `<button type="button" class="thumb" data-photo="${esc(p)}" aria-label="看大图"><img alt=""${u?` src="${u}"`:` data-src="${esc(p)}"`}></button>`; };
+  const thumbHtml=p=>{ const u=Store.photoCached(p), ext=(/\.([a-z0-9]+)$/i.exec(p)||[,''])[1].toUpperCase(); return `<button type="button" class="thumb" data-photo="${esc(p)}" data-ext="${esc(ext)}" aria-label="看大图"><img alt=""${u?` src="${u}"`:` data-src="${esc(p)}"`}></button>`; };
+  /* a photo this browser cannot show (HEIC on most computers and Android phones): its tile shows the format instead, and
+     the big view says it is stored all the same */
+  document.addEventListener('error',e=>{
+    const im=e.target; if(!im||im.tagName!=='IMG') return;
+    const tile=im.closest('.thumb,.thumbs li'); if(tile){ tile.classList.add('nopv'); return; }
+    if(im.classList.contains('ph-big')) im.replaceWith(Object.assign(document.createElement('p'),{className:'dlg-p',textContent:'这张照片的格式（比如 HEIC）这个浏览器显示不了，不过已经存好了，AI 那边能看。'}));
+  },true);
   function fillThumbs(){
     document.querySelectorAll('img[data-src]').forEach(img=>{ const p=img.dataset.src;
       Store.photoURL(p).then(u=>{ if(u&&img.isConnected&&img.dataset.src===p){ img.src=u; img.removeAttribute('data-src'); } }); });
@@ -1059,9 +1066,30 @@
      has already organized is gone from the inbox and can no longer be changed: what was typed can be kept as a new note. */
   const CLS=['口语','听力','阅读','语法','讨论','写作','发音','单词测验','其他'];
   let capCls=store.get('cap-cls')||'', capStar=false;
-  /* photos picked for the note being written: {blob, url}; shrunk here (long side 1800 px, JPEG) so a whiteboard stays
-     readable at about 300 KB. A note may be photos only (a word test, the whiteboard) */
-  const PH_MAX=9, PH_SIDE=1800, PH_Q=0.8;
+  /* photos picked for the note being written: {blob, url, ext, raw?, label?, size?}. A photo this browser can open is shrunk
+     here (long side 1800 px, JPEG) so a whiteboard stays readable at about 300 KB. One it cannot open (HEIC on most
+     computers and Android phones, a picture too big to open on a phone) goes up as it is, up to 20 MB: the AI converts
+     it on its side. A note may be photos only (a word test, the whiteboard) */
+  const PH_MAX=9, PH_SIDE=1800, PH_Q=0.8, PH_RAW_MAX=20*1024*1024;
+  const IMG_EXT={jpg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',heic:'image/heic',heif:'image/heif',avif:'image/avif',bmp:'image/bmp',tif:'image/tiff'};
+  const EXT_ALIAS={jpeg:'jpg',jpe:'jpg',tiff:'tif',hif:'heif'};
+  function extOf(file){
+    const m=/\.([a-z0-9]{2,5})$/i.exec(file.name||''), e=m?(EXT_ALIAS[m[1].toLowerCase()]||m[1].toLowerCase()):'';
+    if(IMG_EXT[e]) return e;
+    const t=String(file.type||'').toLowerCase(); if(t==='image/jpg'||t==='image/pjpeg') return 'jpg';
+    return Object.keys(IMG_EXT).find(k=>IMG_EXT[k]===t)||'';
+  }
+  const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+  async function preparePhoto(file){
+    try{ const blob=await shrinkPhoto(file); return {blob,ext:'jpg',url:URL.createObjectURL(blob)}; }
+    catch(e){
+      const ext=extOf(file);
+      if(!ext&&!String(file.type||'').startsWith('image/')) throw new Error('notimage');
+      if(file.size>PH_RAW_MAX) throw new Error('toobig');
+      const blob=file.slice(0,file.size,IMG_EXT[ext]||file.type||'application/octet-stream');
+      return {blob,ext:ext||'img',url:URL.createObjectURL(blob),raw:true,label:(ext||'图片').toUpperCase(),size:file.size};
+    }
+  }
   let capPhotos=[], capBusy=0;
   async function shrinkPhoto(file){
     let src=null, url='';
@@ -1084,21 +1112,24 @@
     $('#cap-go').textContent=capEditId?'保存修改':'记下';
     $('#cap-ph').hidden=!!capEditId;   /* a note's photos stay as they were when it is changed */
     $('#cap-thumbs').hidden=!!capEditId||!capPhotos.length;
-    $('#cap-thumbs').innerHTML=capPhotos.map((p,i)=>`<li><img src="${p.url}" alt="第 ${i+1} 张照片"><button type="button" class="thumb-x" data-thx="${i}" aria-label="去掉第 ${i+1} 张">×</button></li>`).join('');
+    $('#cap-thumbs').innerHTML=capPhotos.map((p,i)=>`<li${p.raw?` class="raw" data-ext="${esc(p.label)}"`:''}><img src="${p.url}" alt="第 ${i+1} 张照片">${p.raw?`<span class="ph-tag">原图 ${esc(fmtSize(p.size))}</span>`:''}<button type="button" class="thumb-x" data-thx="${i}" aria-label="去掉第 ${i+1} 张">×</button></li>`).join('');
     $('#cap-ph-n').textContent=capBusy?'正在处理照片…':capPhotos.length?`${capPhotos.length} 张，记下后自动上传`:'';
     $('#cap-text').placeholder=capPhotos.length&&!capEditId?'这是什么（可以不写）':'听到的词或句子';
   }
   $('#cap-file').addEventListener('change',async e=>{
     const list=[...(e.target.files||[])]; e.target.value='';
-    let bad=0, over=0;
+    let notImg=0, big=0, over=0, raw=0;
     for(const f of list){
       if(capPhotos.length>=PH_MAX){ over++; continue; }
       capBusy++; syncCap();
-      try{ const blob=await shrinkPhoto(f); capPhotos.push({blob,url:URL.createObjectURL(blob)}); }catch(err){ bad++; }
+      try{ const p=await preparePhoto(f); capPhotos.push(p); if(p.raw) raw++; }
+      catch(err){ if(err&&err.message==='toobig') big++; else notImg++; }
       finally{ capBusy--; syncCap(); }
     }
-    if(bad) toast(`${bad} 张照片打不开（可能是 HEIC 格式），换成 JPG 再选`);
+    if(big) toast(`${big} 张照片超过 20 MB，没加上；换一张或截个图再选`);
+    else if(notImg) toast(`${notImg} 个文件不是图片，没加上`);
     else if(over) toast(`一条最多 ${PH_MAX} 张，多的没加上`);
+    else if(raw) toast(`${raw} 张照片按原图上传（文件大一些），AI 那边能看`);
   });
   $('#cap-thumbs').addEventListener('click',e=>{ const x=e.target.closest('[data-thx]'); if(!x) return; const i=+x.dataset.thx, p=capPhotos[i]; if(p){ URL.revokeObjectURL(p.url); capPhotos.splice(i,1); syncCap(); } });
   syncCap();
@@ -1140,7 +1171,7 @@
       try{
         /* the photos go into the queue first (state/photos/日期/笔记id-序号.jpg); the note that names them follows */
         const id=Store.newNoteId(), n=capPhotos.length;
-        if(withPh){ data.photos=capPhotos.map((_,i)=>`state/photos/${data.date}/${id}-${i+1}.jpg`); for(let i=0;i<n;i++) await Store.addPhoto(data.photos[i],capPhotos[i].blob); }
+        if(withPh){ data.photos=capPhotos.map((p,i)=>`state/photos/${data.date}/${id}-${i+1}.${p.ext||'jpg'}`); for(let i=0;i<n;i++) await Store.addPhoto(data.photos[i],capPhotos[i].blob); }
         Store.addNote(data,id); inbox=Store.inbox;
         tx.value=''; nt.value=''; capStar=false; clearCapPhotos(); syncCap(); render();
         toast(withPh?`记下了，${n} 张照片会自动传上去`:'记下了'); tx.focus();

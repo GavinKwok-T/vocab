@@ -89,6 +89,11 @@ ol{list-style:none;margin:0;padding:0}
 .in-ph{margin:4px 0 2px;gap:6px}
 .in-ph img{display:block;width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--rule);background:var(--bg)}
 .ph-big{display:block;width:100%;height:auto;border-radius:10px;background:var(--bg)}
+/* an original kept as it is (HEIC and the like): a small 原图 tag; when this browser cannot show it, the tile shows the format */
+.ph-tag{position:absolute;left:4px;right:4px;bottom:4px;border-radius:6px;padding:0 4px;background:rgba(0,0,0,.6);color:#fff;font-size:.62rem;line-height:1.6;text-align:center;white-space:nowrap;overflow:hidden}
+.thumbs li.nopv img,.thumb.nopv img{visibility:hidden}
+.thumbs li.nopv::before,.thumb.nopv::before{content:attr(data-ext);position:absolute;inset:0;display:grid;place-items:center;font-size:.78rem;font-weight:700;color:var(--muted);border:1px dashed var(--rule);border-radius:10px;pointer-events:none}
+.thumb{position:relative}
 .pill{border:1px solid var(--rule);background:transparent;color:var(--muted);border-radius:999px;padding:4px 11px;font:inherit;font-size:.85rem;cursor:pointer}
 .pill[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:700}
 .pill.star[aria-pressed="true"]{background:var(--mark);border-color:var(--mark);color:var(--mark-ink)}

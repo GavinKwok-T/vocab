@@ -392,7 +392,9 @@
       const sha=tree.get(path); if(!sha||!token) return null;
       blob=await kv.get('blobs',sha);
       if(!(blob instanceof Blob)){
-        try{ blob=new Blob([await gh(repoPath()+'/git/blobs/'+sha,{bin:true})],{type:'image/jpeg'}); kv.set('blobs',sha,blob); }
+        const ext=(/\.([a-z0-9]+)$/i.exec(path)||[,'jpg'])[1].toLowerCase();
+        const type={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',heic:'image/heic',heif:'image/heif',avif:'image/avif',bmp:'image/bmp',tif:'image/tiff'}[ext]||'application/octet-stream';
+        try{ blob=new Blob([await gh(repoPath()+'/git/blobs/'+sha,{bin:true})],{type}); kv.set('blobs',sha,blob); }
         catch(e){ return null; }
       }
     }
